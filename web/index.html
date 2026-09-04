@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Expiry Alert System - Dashboard</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🥫</text></svg>">
+</head>
+<body>
+
+  <!-- Top Navigation Header -->
+  <header class="app-header">
+    <div class="header-container">
+      <div class="brand">
+        <span class="brand-icon">🥫</span>
+        <div>
+          <h1>Expiry Alert System</h1>
+          <p class="subtitle">Smart Household & Small Inventory Expiry Tracker</p>
+        </div>
+      </div>
+      <div class="header-actions">
+        <div class="date-pill" id="currentDatePill">📅 Today</div>
+        <button id="refreshBtn" class="btn btn-secondary" title="Refresh data">🔄 Refresh</button>
+        <button id="openAddModalBtn" class="btn btn-primary">➕ Add Item</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="main-container">
+
+    <!-- Automatic Startup / Urgent Expiry Alert Banner -->
+    <section id="alertBanner" class="alert-banner hidden">
+      <div class="alert-icon">⚠️</div>
+      <div class="alert-content">
+        <h3 id="alertBannerTitle">Urgent Expiry Alert</h3>
+        <p id="alertBannerMsg">Some items in your inventory have expired or will expire within 7 days.</p>
+      </div>
+      <button id="filterAlertsBtn" class="btn btn-alert-action">Review Urgent Items</button>
+    </section>
+
+    <!-- Metrics Cards Grid -->
+    <section class="metrics-grid">
+      <div class="metric-card card-total">
+        <div class="metric-header">
+          <span class="metric-title">Total Items</span>
+          <span class="metric-icon">📦</span>
+        </div>
+        <div class="metric-value" id="statTotal">0</div>
+        <div class="metric-hint">Saved in inventory.csv</div>
+      </div>
+
+      <div class="metric-card card-expired">
+        <div class="metric-header">
+          <span class="metric-title">Expired</span>
+          <span class="metric-icon">🔴</span>
+        </div>
+        <div class="metric-value" id="statExpired">0</div>
+        <div class="metric-hint">Past expiration date</div>
+      </div>
+
+      <div class="metric-card card-warning">
+        <div class="metric-header">
+          <span class="metric-title">Expiring Soon</span>
+          <span class="metric-icon">🟡</span>
+        </div>
+        <div class="metric-value" id="statSoon">0</div>
+        <div class="metric-hint">Within next 7 days</div>
+      </div>
+
+      <div class="metric-card card-safe">
+        <div class="metric-header">
+          <span class="metric-title">Safe</span>
+          <span class="metric-icon">🟢</span>
+        </div>
+        <div class="metric-value" id="statSafe">0</div>
+        <div class="metric-hint">Over 7 days remaining</div>
+      </div>
+    </section>
+
+    <!-- Controls Toolbar -->
+    <section class="toolbar-card">
+      <div class="search-box">
+        <span class="search-icon">🔍</span>
+        <input type="search" id="searchInput" placeholder="Search by name, category, or notes..." autocomplete="off">
+      </div>
+
+      <div class="filter-group">
+        <select id="categoryFilter" aria-label="Filter by category">
+          <option value="">All Categories</option>
+        </select>
+
+        <div class="status-tabs" role="tablist">
+          <button class="tab-btn active" data-status="ALL">All</button>
+          <button class="tab-btn" data-status="ALERTS">Alerts Only</button>
+          <button class="tab-btn" data-status="EXPIRED">Expired</button>
+          <button class="tab-btn" data-status="EXPIRING_SOON">Expiring Soon</button>
+          <button class="tab-btn" data-status="SAFE">Safe</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Inventory Table Card -->
+    <section class="table-card">
+      <div class="table-header-row">
+        <h2>Inventory Records</h2>
+        <span id="recordCount" class="record-counter">Showing 0 items</span>
+      </div>
+
+      <div class="table-responsive">
+        <table class="inventory-table">
+          <thead>
+            <tr>
+              <th style="width: 60px;">ID</th>
+              <th>Item Name</th>
+              <th>Category</th>
+              <th style="width: 70px;">Qty</th>
+              <th>Expiry Date</th>
+              <th>Days Left</th>
+              <th>Status</th>
+              <th>Notes</th>
+              <th style="width: 90px; text-align: center;">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="inventoryTableBody">
+            <!-- Populated dynamically by app.js -->
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Empty State View -->
+      <div id="emptyState" class="empty-state hidden">
+        <span class="empty-icon">🔍</span>
+        <h3>No matching items found</h3>
+        <p>Try clearing your search or change your filter settings.</p>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Add Item Modal Dialog -->
+  <dialog id="addModal" class="modal-dialog">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3>Add New Inventory Item</h3>
+        <button id="closeModalBtn" class="close-btn" aria-label="Close modal">&times;</button>
+      </div>
+      <form id="addItemForm" method="dialog">
+        <div class="form-group">
+          <label for="itemName">Item Name <span class="required">*</span></label>
+          <input type="text" id="itemName" name="name" required placeholder="e.g., Whole Milk 1L, Paracetamol" autocomplete="off">
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="itemCategory">Category <span class="required">*</span></label>
+            <input type="text" id="itemCategory" name="category" list="categorySuggestions" required placeholder="e.g. Dairy, Pantry">
+            <datalist id="categorySuggestions">
+              <option value="Dairy">
+              <option value="Bakery">
+              <option value="Medicine">
+              <option value="Pantry">
+              <option value="Poultry">
+              <option value="Produce">
+              <option value="Meat">
+              <option value="Beverages">
+              <option value="Household">
+            </datalist>
+          </div>
+
+          <div class="form-group">
+            <label for="itemQuantity">Quantity <span class="required">*</span></label>
+            <input type="number" id="itemQuantity" name="quantity" min="1" value="1" required>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="itemExpiryDate">Expiry Date <span class="required">*</span></label>
+          <input type="date" id="itemExpiryDate" name="expiryDate" required>
+        </div>
+
+        <div class="form-group">
+          <label for="itemNotes">Notes (Optional)</label>
+          <input type="text" id="itemNotes" name="notes" placeholder="e.g. Keep in bottom drawer, Batch #4">
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" id="cancelModalBtn" class="btn btn-secondary">Cancel</button>
+          <button type="submit" id="saveItemBtn" class="btn btn-primary">Save Item</button>
+        </div>
+      </form>
+    </div>
+  </dialog>
+
+  <!-- Toast Notification Container -->
+  <div id="toastContainer" class="toast-container" aria-live="polite"></div>
+
+  <footer class="app-footer">
+    <p>Expiry Alert System &bull; Pure Core Java Backend with Shared CSV Persistence (<code>data/inventory.csv</code>)</p>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
