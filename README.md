@@ -232,6 +232,22 @@ Then navigate to **`http://localhost:8080`** in Chrome, Edge, or Firefox.
 
 ---
 
+## 🚀 Free Cloud Deployment (Render.com)
+
+You can deploy this application for free on **[Render](https://render.com/)** using Docker:
+
+1. Sign up / Log in to [Render](https://render.com/) (using your GitHub account).
+2. Click **New +** &rarr; **Web Service**.
+3. Select your repository: **`sukhritibhangu/ExpiryManagement`**.
+4. Render will auto-detect the `Dockerfile`:
+   - **Name:** `expiry-management` (or any name you choose)
+   - **Runtime:** `Docker`
+   - **Instance Type:** `Free`
+5. Click **Deploy Web Service**!
+6. In ~2 minutes, your live URL will be active (e.g. `https://expiry-management.onrender.com`).
+
+---
+
 ## 🧩 Software Design Principles
 
 - **Separation of Concerns:** Distinct model, service, storage, and presentation layers.
