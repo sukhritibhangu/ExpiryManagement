@@ -86,6 +86,8 @@ public class WebServer {
         // API endpoints
         server.createContext("/api/items", new ItemsApiHandler());
         server.createContext("/api/alerts", new AlertsApiHandler());
+        server.createContext("/api/profile", new ProfileApiHandler());
+        server.createContext("/api/login", new LoginApiHandler());
 
         server.setExecutor(null); // default executor
         server.start();
@@ -236,6 +238,130 @@ public class WebServer {
             List<Item> alerts = itemService.getAlertItems();
             String json = itemsToJson(alerts);
             sendResponse(exchange, 200, "application/json; charset=UTF-8", json.getBytes(StandardCharsets.UTF_8));
+        }
+    }
+
+    /**
+     * REST API for /api/profile (GET, POST).
+     */
+    private class ProfileApiHandler implements HttpHandler {
+        private final Path profilePath = Paths.get("data", "profile.json");
+
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            addCorsHeaders(exchange);
+            String method = exchange.getRequestMethod().toUpperCase();
+
+            switch (method) {
+                case "OPTIONS" -> sendResponse(exchange, 204, "text/plain", new byte[0]);
+                case "GET" -> handleGetProfile(exchange);
+                case "POST" -> handleSaveProfile(exchange);
+                default -> sendResponse(exchange, 405, "application/json", "{\"error\":\"Method Not Allowed\"}".getBytes(StandardCharsets.UTF_8));
+            }
+        }
+
+        private void handleGetProfile(HttpExchange exchange) throws IOException {
+            if (!Files.exists(profilePath)) {
+                sendResponse(exchange, 200, "application/json; charset=UTF-8", "{\"configured\":false}".getBytes(StandardCharsets.UTF_8));
+                return;
+            }
+
+            try {
+                String json = Files.readString(profilePath, StandardCharsets.UTF_8);
+                String username = parseJsonField(json, "username");
+                String displayName = parseJsonField(json, "displayName");
+                if (displayName == null || displayName.isEmpty()) displayName = username;
+
+                String resp = String.format("{\"configured\":true,\"username\":\"%s\",\"displayName\":\"%s\"}",
+                        escapeJson(username), escapeJson(displayName));
+                sendResponse(exchange, 200, "application/json; charset=UTF-8", resp.getBytes(StandardCharsets.UTF_8));
+            } catch (Exception e) {
+                sendResponse(exchange, 200, "application/json; charset=UTF-8", "{\"configured\":false}".getBytes(StandardCharsets.UTF_8));
+            }
+        }
+
+        private void handleSaveProfile(HttpExchange exchange) throws IOException {
+            InputStream is = exchange.getRequestBody();
+            String body = new String(is.readAllBytes(), StandardCharsets.UTF_8);
+
+            String username = parseJsonField(body, "username");
+            String password = parseJsonField(body, "password");
+            String displayName = parseJsonField(body, "displayName");
+
+            if (username == null || username.trim().isEmpty() || password == null || password.trim().isEmpty()) {
+                sendJsonError(exchange, 400, "Username and password cannot be empty.");
+                return;
+            }
+
+            if (displayName == null || displayName.trim().isEmpty()) {
+                displayName = username.trim();
+            }
+
+            if (profilePath.getParent() != null) {
+                Files.createDirectories(profilePath.getParent());
+            }
+
+            String fileContent = String.format("{\"username\":\"%s\",\"password\":\"%s\",\"displayName\":\"%s\"}",
+                    escapeJson(username.trim()), escapeJson(password.trim()), escapeJson(displayName.trim()));
+            Files.writeString(profilePath, fileContent, StandardCharsets.UTF_8);
+
+            String resp = String.format("{\"success\":true,\"configured\":true,\"username\":\"%s\",\"displayName\":\"%s\"}",
+                    escapeJson(username.trim()), escapeJson(displayName.trim()));
+            sendResponse(exchange, 200, "application/json; charset=UTF-8", resp.getBytes(StandardCharsets.UTF_8));
+        }
+    }
+
+    /**
+     * REST API for /api/login (POST).
+     */
+    private class LoginApiHandler implements HttpHandler {
+        private final Path profilePath = Paths.get("data", "profile.json");
+
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            addCorsHeaders(exchange);
+            String method = exchange.getRequestMethod().toUpperCase();
+
+            if (method.equals("OPTIONS")) {
+                sendResponse(exchange, 204, "text/plain", new byte[0]);
+                return;
+            }
+
+            if (!method.equals("POST")) {
+                sendResponse(exchange, 405, "application/json", "{\"error\":\"Method Not Allowed\"}".getBytes(StandardCharsets.UTF_8));
+                return;
+            }
+
+            if (!Files.exists(profilePath)) {
+                sendJsonError(exchange, 400, "No account set up yet. Please create your credentials.");
+                return;
+            }
+
+            InputStream is = exchange.getRequestBody();
+            String body = new String(is.readAllBytes(), StandardCharsets.UTF_8);
+
+            String username = parseJsonField(body, "username");
+            String password = parseJsonField(body, "password");
+
+            try {
+                String savedJson = Files.readString(profilePath, StandardCharsets.UTF_8);
+                String savedUser = parseJsonField(savedJson, "username");
+                String savedPass = parseJsonField(savedJson, "password");
+                String savedDisplayName = parseJsonField(savedJson, "displayName");
+
+                if (savedUser != null && savedPass != null &&
+                    savedUser.equalsIgnoreCase(username != null ? username.trim() : "") &&
+                    savedPass.equals(password != null ? password.trim() : "")) {
+
+                    String resp = String.format("{\"success\":true,\"username\":\"%s\",\"displayName\":\"%s\"}",
+                            escapeJson(savedUser), escapeJson(savedDisplayName != null ? savedDisplayName : savedUser));
+                    sendResponse(exchange, 200, "application/json; charset=UTF-8", resp.getBytes(StandardCharsets.UTF_8));
+                } else {
+                    sendJsonError(exchange, 401, "Invalid username or password.");
+                }
+            } catch (Exception e) {
+                sendJsonError(exchange, 500, "Login verification failed: " + e.getMessage());
+            }
         }
     }
 

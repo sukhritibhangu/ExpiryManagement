@@ -200,16 +200,22 @@ Found 3 matching item(s):
 
 ---
 
-## 🌐 Web Dashboard (Simple Frontend)
+## 🌐 Digital Book Web Dashboard & OCR Scanner
 
-In addition to the console interface, the project includes a lightweight, modern web dashboard built with vanilla HTML5, CSS3, and JavaScript, powered by a 100% pure Java HTTP server (`com.sun.net.httpserver.HttpServer`).
+In addition to the console interface, the project includes an immersive **Digital Book / Ledger** web dashboard with optical character recognition (OCR) scanning, user authentication, and dark/light theme switching, powered by a 100% pure Java HTTP server (`com.sun.net.httpserver.HttpServer`).
 
-### Features of the Web Dashboard:
-- **Live Automatic Alerts:** Prominently alerts you about expired items and items expiring within 7 days.
-- **Metric Cards:** Real-time counts for Total, Expired, Expiring Soon, and Safe items.
-- **Instant Search & Filters:** Type to search instantly across names, categories, or notes, or filter by category and status tabs.
-- **Add Item Dialog:** Clean modal popup with datepicker and built-in validation.
-- **Delete with Confirmation:** Easily remove items directly from the table.
+### Key Web Features:
+- **Optical Character Recognition (OCR):** Upload or photograph product packaging labels. The system performs client-side OCR (via Tesseract.js WebAssembly) with an animated laser scanning effect, automatically detecting product titles and expiry dates (`EXP`, `BB`, `Best Before`, etc.).
+- **Simple Custom Authentication:** Create your own username and password on first launch to unlock the ledger, with persistent credentials and profile editing.
+- **Top Bookmark Ribbon Tabs:** Easily switch between:
+  1. *Scan Item (via OCR)*
+  2. *Add Item (Manually)*
+  3. *View Items (The Master Ledger)*
+  4. *Edit Profile*
+- **Theme Switcher:** Seamlessly toggle between **Parchment (Light)** and **Night Grimoire (Dark)** book aesthetics with instant local persistence.
+- **Login Notification Alerts:** Immediate popup warning ribbon and browser notification for items expired or expiring within 7 days upon login.
+- **Fluid Book Animations:** Smooth page turns, laser scan animations, card elevations, and attention-drawing badge pulses.
+- **Zero Keyboard Emojis:** Designed purely with clean typographic badges and elegant vector SVG icons.
 - **Shared Data:** Seamlessly syncs with `data/inventory.csv` and the console application.
 
 ### How to Launch the Web Frontend:
@@ -231,6 +237,9 @@ Then navigate to **`http://localhost:8080`** in Chrome, Edge, or Firefox.
 - `GET /api/alerts` — Returns only urgent items needing attention (Expired and Expiring Soon).
 - `POST /api/items` — Adds a new item to inventory (persisted to CSV).
 - `DELETE /api/items?id={id}` — Deletes an item by ID (persisted to CSV).
+- `GET /api/profile` — Checks if an account is set up and returns public profile metadata.
+- `POST /api/profile` — Saves or updates user credentials.
+- `POST /api/login` — Verifies user credentials.
 
 ---
 

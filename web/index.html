@@ -1,203 +1,538 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Expiry Alert System - Dashboard</title>
+  <title>Expiry Alert Ledger - Digital Inventory</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=Crimson+Pro:ital,wght@0,400;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🥫</text></svg>">
+  <!-- Client-side OCR library -->
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 </head>
 <body>
 
-  <!-- Top Navigation Header -->
-  <header class="app-header">
-    <div class="header-container">
-      <div class="brand">
-        <span class="brand-icon">🥫</span>
-        <div>
-          <h1>Expiry Alert System</h1>
-          <p class="subtitle">Smart Household & Small Inventory Expiry Tracker</p>
+  <!-- =========================================================================
+       LOGIN & PROFILE SETUP MODAL / OVERLAY
+       ========================================================================= -->
+  <div id="authOverlay" class="auth-overlay">
+    <div class="book-cover">
+      <div class="book-spine-trim"></div>
+      <div class="book-cover-content">
+        <div class="embossed-crest">
+          <svg class="svg-crest" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 8 L32 4 L52 8 L52 38 C52 48 32 58 32 58 C32 58 12 48 12 38 Z"/>
+            <path d="M32 16 L32 36 M22 26 L42 26"/>
+            <circle cx="32" cy="44" r="2" fill="currentColor"/>
+          </svg>
         </div>
-      </div>
-      <div class="header-actions">
-        <div class="date-pill" id="currentDatePill">📅 Today</div>
-        <button id="refreshBtn" class="btn btn-secondary" title="Refresh data">🔄 Refresh</button>
-        <button id="openAddModalBtn" class="btn btn-primary">➕ Add Item</button>
-      </div>
-    </div>
-  </header>
+        <h1 class="book-title">Expiry Alert Ledger</h1>
+        <p class="book-subtitle">Household &amp; Small Inventory Chronicle</p>
 
-  <main class="main-container">
+        <!-- Login Form -->
+        <form id="loginForm" class="auth-form">
+          <div class="form-banner" id="authBanner">Sign In to Open the Ledger</div>
 
-    <!-- Automatic Startup / Urgent Expiry Alert Banner -->
-    <section id="alertBanner" class="alert-banner hidden">
-      <div class="alert-icon">⚠️</div>
-      <div class="alert-content">
-        <h3 id="alertBannerTitle">Urgent Expiry Alert</h3>
-        <p id="alertBannerMsg">Some items in your inventory have expired or will expire within 7 days.</p>
-      </div>
-      <button id="filterAlertsBtn" class="btn btn-alert-action">Review Urgent Items</button>
-    </section>
-
-    <!-- Metrics Cards Grid -->
-    <section class="metrics-grid">
-      <div class="metric-card card-total">
-        <div class="metric-header">
-          <span class="metric-title">Total Items</span>
-          <span class="metric-icon">📦</span>
-        </div>
-        <div class="metric-value" id="statTotal">0</div>
-        <div class="metric-hint">Saved in inventory.csv</div>
-      </div>
-
-      <div class="metric-card card-expired">
-        <div class="metric-header">
-          <span class="metric-title">Expired</span>
-          <span class="metric-icon">🔴</span>
-        </div>
-        <div class="metric-value" id="statExpired">0</div>
-        <div class="metric-hint">Past expiration date</div>
-      </div>
-
-      <div class="metric-card card-warning">
-        <div class="metric-header">
-          <span class="metric-title">Expiring Soon</span>
-          <span class="metric-icon">🟡</span>
-        </div>
-        <div class="metric-value" id="statSoon">0</div>
-        <div class="metric-hint">Within next 7 days</div>
-      </div>
-
-      <div class="metric-card card-safe">
-        <div class="metric-header">
-          <span class="metric-title">Safe</span>
-          <span class="metric-icon">🟢</span>
-        </div>
-        <div class="metric-value" id="statSafe">0</div>
-        <div class="metric-hint">Over 7 days remaining</div>
-      </div>
-    </section>
-
-    <!-- Controls Toolbar -->
-    <section class="toolbar-card">
-      <div class="search-box">
-        <span class="search-icon">🔍</span>
-        <input type="search" id="searchInput" placeholder="Search by name, category, or notes..." autocomplete="off">
-      </div>
-
-      <div class="filter-group">
-        <select id="categoryFilter" aria-label="Filter by category">
-          <option value="">All Categories</option>
-        </select>
-
-        <div class="status-tabs" role="tablist">
-          <button class="tab-btn active" data-status="ALL">All</button>
-          <button class="tab-btn" data-status="ALERTS">Alerts Only</button>
-          <button class="tab-btn" data-status="EXPIRED">Expired</button>
-          <button class="tab-btn" data-status="EXPIRING_SOON">Expiring Soon</button>
-          <button class="tab-btn" data-status="SAFE">Safe</button>
-        </div>
-      </div>
-    </section>
-
-    <!-- Inventory Table Card -->
-    <section class="table-card">
-      <div class="table-header-row">
-        <h2>Inventory Records</h2>
-        <span id="recordCount" class="record-counter">Showing 0 items</span>
-      </div>
-
-      <div class="table-responsive">
-        <table class="inventory-table">
-          <thead>
-            <tr>
-              <th style="width: 60px;">ID</th>
-              <th>Item Name</th>
-              <th>Category</th>
-              <th style="width: 70px;">Qty</th>
-              <th>Expiry Date</th>
-              <th>Days Left</th>
-              <th>Status</th>
-              <th>Notes</th>
-              <th style="width: 90px; text-align: center;">Actions</th>
-            </tr>
-          </thead>
-          <tbody id="inventoryTableBody">
-            <!-- Populated dynamically by app.js -->
-          </tbody>
-        </table>
-      </div>
-
-      <!-- Empty State View -->
-      <div id="emptyState" class="empty-state hidden">
-        <span class="empty-icon">🔍</span>
-        <h3>No matching items found</h3>
-        <p>Try clearing your search or change your filter settings.</p>
-      </div>
-    </section>
-
-  </main>
-
-  <!-- Add Item Modal Dialog -->
-  <dialog id="addModal" class="modal-dialog">
-    <div class="modal-box">
-      <div class="modal-header">
-        <h3>Add New Inventory Item</h3>
-        <button id="closeModalBtn" class="close-btn" aria-label="Close modal">&times;</button>
-      </div>
-      <form id="addItemForm" method="dialog">
-        <div class="form-group">
-          <label for="itemName">Item Name <span class="required">*</span></label>
-          <input type="text" id="itemName" name="name" required placeholder="e.g., Whole Milk 1L, Paracetamol" autocomplete="off">
-        </div>
-
-        <div class="form-row">
-          <div class="form-group">
-            <label for="itemCategory">Category <span class="required">*</span></label>
-            <input type="text" id="itemCategory" name="category" list="categorySuggestions" required placeholder="e.g. Dairy, Pantry">
-            <datalist id="categorySuggestions">
-              <option value="Dairy">
-              <option value="Bakery">
-              <option value="Medicine">
-              <option value="Pantry">
-              <option value="Poultry">
-              <option value="Produce">
-              <option value="Meat">
-              <option value="Beverages">
-              <option value="Household">
-            </datalist>
+          <div class="form-field">
+            <label for="authUsername">Username</label>
+            <input type="text" id="authUsername" required placeholder="Enter username" autocomplete="username">
           </div>
 
-          <div class="form-group">
-            <label for="itemQuantity">Quantity <span class="required">*</span></label>
-            <input type="number" id="itemQuantity" name="quantity" min="1" value="1" required>
+          <div class="form-field">
+            <label for="authPassword">Password</label>
+            <input type="password" id="authPassword" required placeholder="Enter password" autocomplete="current-password">
+          </div>
+
+          <div class="form-field" id="displayNameField" style="display: none;">
+            <label for="authDisplayName">Display Name (Optional)</label>
+            <input type="text" id="authDisplayName" placeholder="e.g. Master of the Pantry">
+          </div>
+
+          <button type="submit" id="authSubmitBtn" class="btn btn-seal">
+            <span class="btn-text">Open Ledger</span>
+            <svg class="svg-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M5 12h14M12 5l7 7-7 7"/>
+            </svg>
+          </button>
+
+          <div class="auth-toggle-row">
+            <button type="button" id="toggleAuthModeBtn" class="link-btn">New user? Set up your username and password</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- =========================================================================
+       MAIN BOOK INTERFACE (SHOWN WHEN LOGGED IN)
+       ========================================================================= -->
+  <div id="bookApp" class="book-container hidden">
+
+    <!-- Header & Top Navigation Ribbon Tabs -->
+    <header class="ledger-header">
+      <div class="header-top-row">
+        <div class="header-brand">
+          <svg class="svg-icon-brand" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
+            <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+            <line x1="8" y1="7" x2="16" y2="7"/>
+            <line x1="8" y1="11" x2="14" y2="11"/>
+          </svg>
+          <div>
+            <h1 class="brand-title">Expiry Alert Ledger</h1>
+            <span class="brand-meta" id="headerDateDisplay">Recorded on this day</span>
           </div>
         </div>
 
-        <div class="form-group">
-          <label for="itemExpiryDate">Expiry Date <span class="required">*</span></label>
-          <input type="date" id="itemExpiryDate" name="expiryDate" required>
+        <div class="header-controls">
+          <!-- Theme Switcher (Dark / Light) -->
+          <button id="themeToggleBtn" class="control-btn" title="Toggle Light / Dark Theme" aria-label="Toggle theme">
+            <svg class="svg-theme-icon svg-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="5"/>
+              <line x1="12" y1="1" x2="12" y2="3"/>
+              <line x1="12" y1="21" x2="12" y2="23"/>
+              <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+              <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+              <line x1="1" y1="12" x2="3" y2="12"/>
+              <line x1="21" y1="12" x2="23" y2="12"/>
+              <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+              <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+            </svg>
+            <svg class="svg-theme-icon svg-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+            </svg>
+            <span id="themeLabel" class="control-label">Parchment</span>
+          </button>
+
+          <!-- User Badge & Logout -->
+          <div class="user-pill">
+            <svg class="svg-user-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+              <circle cx="12" cy="7" r="4"/>
+            </svg>
+            <span id="userDisplayName">Reader</span>
+          </div>
+
+          <button id="logoutBtn" class="control-btn btn-logout" title="Close and Lock Ledger">
+            <svg class="svg-logout-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+              <polyline points="16 17 21 12 16 7"/>
+              <line x1="21" y1="12" x2="9" y2="12"/>
+            </svg>
+            <span class="control-label">Lock</span>
+          </button>
         </div>
+      </div>
 
-        <div class="form-group">
-          <label for="itemNotes">Notes (Optional)</label>
-          <input type="text" id="itemNotes" name="notes" placeholder="e.g. Keep in bottom drawer, Batch #4">
-        </div>
+      <!-- Book Index Ribbon Tabs -->
+      <nav class="book-ribbon-tabs" role="tablist">
+        <button class="ribbon-tab active" data-tab="scan" role="tab" aria-selected="true">
+          <svg class="svg-tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+            <circle cx="12" cy="13" r="4"/>
+          </svg>
+          <span>Scan Item (via OCR)</span>
+        </button>
 
-        <div class="modal-footer">
-          <button type="button" id="cancelModalBtn" class="btn btn-secondary">Cancel</button>
-          <button type="submit" id="saveItemBtn" class="btn btn-primary">Save Item</button>
-        </div>
-      </form>
-    </div>
-  </dialog>
+        <button class="ribbon-tab" data-tab="add" role="tab" aria-selected="false">
+          <svg class="svg-tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="12" y1="5" x2="12" y2="19"/>
+            <line x1="5" y1="12" x2="19" y2="12"/>
+          </svg>
+          <span>Add Item (Manually)</span>
+        </button>
 
-  <!-- Toast Notification Container -->
-  <div id="toastContainer" class="toast-container" aria-live="polite"></div>
+        <button class="ribbon-tab" data-tab="view" role="tab" aria-selected="false">
+          <svg class="svg-tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="8" y1="6" x2="21" y2="6"/>
+            <line x1="8" y1="12" x2="21" y2="12"/>
+            <line x1="8" y1="18" x2="21" y2="18"/>
+            <line x1="3" y1="6" x2="3.01" y2="6"/>
+            <line x1="3" y1="12" x2="3.01" y2="12"/>
+            <line x1="3" y1="18" x2="3.01" y2="18"/>
+          </svg>
+          <span>View Items</span>
+        </button>
 
-  <footer class="app-footer">
-    <p>Expiry Alert System &bull; Pure Core Java Backend with Shared CSV Persistence (<code>data/inventory.csv</code>)</p>
-  </footer>
+        <button class="ribbon-tab" data-tab="profile" role="tab" aria-selected="false">
+          <svg class="svg-tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 20h9"/>
+            <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
+          </svg>
+          <span>Edit Profile</span>
+        </button>
+      </nav>
+    </header>
+
+    <!-- Main Open Book Foliage Container -->
+    <main class="book-page">
+      <div class="page-edge-left"></div>
+      <div class="page-surface">
+
+        <!-- =========================================================================
+             LOGIN NOTIFICATION ALERT BANNER
+             ========================================================================= -->
+        <section id="loginAlertBanner" class="alert-ribbon hidden">
+          <div class="alert-ribbon-content">
+            <div class="alert-ribbon-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                <line x1="12" y1="9" x2="12" y2="13"/>
+                <line x1="12" y1="17" x2="12.01" y2="17"/>
+              </svg>
+            </div>
+            <div>
+              <h4 id="loginAlertTitle">Urgent Notice: Expiry Approaching</h4>
+              <p id="loginAlertBody">Several items require your immediate attention.</p>
+            </div>
+          </div>
+          <div class="alert-ribbon-actions">
+            <button id="viewUrgentLedgerBtn" class="btn btn-ribbon-action">Review in Ledger</button>
+            <button id="dismissAlertBtn" class="btn btn-ribbon-dismiss" title="Dismiss notice">&times;</button>
+          </div>
+        </section>
+
+        <!-- =========================================================================
+             TAB 1: SCAN ITEM VIA OCR
+             ========================================================================= -->
+        <section id="tab-scan" class="tab-content active">
+          <div class="section-heading">
+            <h2 class="page-title">Optical Character Recognition Scanner</h2>
+            <p class="page-description">Capture or upload product packaging photos to automatically decipher the product name, expiry dates, and categories.</p>
+          </div>
+
+          <div class="scan-layout">
+            <!-- Left: Dropzone and Camera Preview -->
+            <div class="scan-upload-col">
+              <div id="dropZone" class="scan-dropzone">
+                <input type="file" id="ocrFileInput" accept="image/*" class="file-input-hidden">
+                <div class="dropzone-empty" id="dropzoneEmpty">
+                  <div class="scan-icon-container">
+                    <svg class="svg-camera-large" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75">
+                      <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                      <circle cx="8.5" cy="8.5" r="1.5"/>
+                      <polyline points="21 15 16 10 5 21"/>
+                    </svg>
+                  </div>
+                  <h3>Select or Drop Image Here</h3>
+                  <p>PNG, JPG, WEBP &bull; Product label, bottle, or packaging</p>
+                  <div class="scan-actions-row">
+                    <button type="button" id="browsePhotoBtn" class="btn btn-secondary">Upload Photo</button>
+                    <button type="button" id="cameraPhotoBtn" class="btn btn-secondary">Use Camera</button>
+                  </div>
+                </div>
+
+                <!-- Preview Container with Laser Animation -->
+                <div class="preview-container hidden" id="previewContainer">
+                  <img id="scannedImagePreview" alt="Packaging snapshot">
+                  <div class="laser-scanner hidden" id="laserScanner"></div>
+                </div>
+              </div>
+
+              <!-- Scanning Progress Bar -->
+              <div id="ocrProgressCard" class="ocr-progress-card hidden">
+                <div class="progress-meta">
+                  <span id="ocrStatusText">Preparing optical scan...</span>
+                  <span id="ocrPercent">0%</span>
+                </div>
+                <div class="progress-track">
+                  <div id="ocrProgressBar" class="progress-fill" style="width: 0%;"></div>
+                </div>
+              </div>
+
+              <div class="scan-buttons-footer hidden" id="scanActionsFooter">
+                <button type="button" id="runScanBtn" class="btn btn-primary">
+                  <svg class="svg-icon-btn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+                  </svg>
+                  <span>Start Optical Deciphering</span>
+                </button>
+                <button type="button" id="resetScanBtn" class="btn btn-secondary">Choose Another Image</button>
+              </div>
+            </div>
+
+            <!-- Right: Extracted Data Card -->
+            <div class="scan-result-col">
+              <div class="parchment-card result-card">
+                <div class="card-header">
+                  <h3>Deciphered Item Details</h3>
+                  <span class="badge badge-neutral" id="ocrConfidenceBadge">Awaiting scan</span>
+                </div>
+
+                <form id="ocrAcceptForm" class="parchment-form">
+                  <div class="form-field">
+                    <label for="ocrExtractedName">Product Name</label>
+                    <input type="text" id="ocrExtractedName" required placeholder="Deciphered product title">
+                  </div>
+
+                  <div class="form-row">
+                    <div class="form-field">
+                      <label for="ocrExtractedCategory">Category</label>
+                      <input type="text" id="ocrExtractedCategory" list="ocrCategorySuggestions" required placeholder="e.g. Dairy, Pantry">
+                      <datalist id="ocrCategorySuggestions">
+                        <option value="Dairy">
+                        <option value="Bakery">
+                        <option value="Medicine">
+                        <option value="Pantry">
+                        <option value="Poultry">
+                        <option value="Produce">
+                        <option value="Beverages">
+                      </datalist>
+                    </div>
+
+                    <div class="form-field">
+                      <label for="ocrExtractedQuantity">Quantity</label>
+                      <input type="number" id="ocrExtractedQuantity" min="1" value="1" required>
+                    </div>
+                  </div>
+
+                  <div class="form-field">
+                    <label for="ocrExtractedDate">Deciphered Expiry Date (YYYY-MM-DD)</label>
+                    <input type="date" id="ocrExtractedDate" required>
+                  </div>
+
+                  <div class="form-field">
+                    <label for="ocrExtractedNotes">Notes / Location</label>
+                    <input type="text" id="ocrExtractedNotes" placeholder="e.g. Front shelf, scanned package">
+                  </div>
+
+                  <button type="submit" id="addScannedItemBtn" class="btn btn-seal" disabled>
+                    <svg class="svg-icon-btn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <polyline points="20 6 9 17 4 12"/>
+                    </svg>
+                    <span>Record in Ledger</span>
+                  </button>
+                </form>
+
+                <!-- Raw Text Accordion -->
+                <details class="raw-text-details">
+                  <summary>Inspect Raw Deciphered Characters</summary>
+                  <pre id="rawOcrOutput">Upload and decipher a label to view detected text segments.</pre>
+                </details>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- =========================================================================
+             TAB 2: ADD ITEM (MANUALLY)
+             ========================================================================= -->
+        <section id="tab-add" class="tab-content">
+          <div class="section-heading">
+            <h2 class="page-title">Record Item Manually</h2>
+            <p class="page-description">Inscribe a new perishable or household good into the permanent ledger.</p>
+          </div>
+
+          <div class="parchment-card form-card-centered">
+            <form id="manualAddForm" class="parchment-form">
+              <div class="form-field">
+                <label for="manualName">Item Designation <span class="ink-mark">*</span></label>
+                <input type="text" id="manualName" required placeholder="e.g., Whole Wheat Sourdough, Aspirin 100mg" autocomplete="off">
+              </div>
+
+              <div class="form-row">
+                <div class="form-field">
+                  <label for="manualCategory">Category Classification <span class="ink-mark">*</span></label>
+                  <input type="text" id="manualCategory" list="manualCategorySuggestions" required placeholder="e.g. Dairy, Pantry">
+                  <datalist id="manualCategorySuggestions">
+                    <option value="Dairy">
+                    <option value="Bakery">
+                    <option value="Medicine">
+                    <option value="Pantry">
+                    <option value="Poultry">
+                    <option value="Produce">
+                    <option value="Meat">
+                    <option value="Beverages">
+                    <option value="Household">
+                  </datalist>
+                </div>
+
+                <div class="form-field">
+                  <label for="manualQuantity">Quantity Count <span class="ink-mark">*</span></label>
+                  <input type="number" id="manualQuantity" min="1" value="1" required>
+                </div>
+              </div>
+
+              <div class="form-field">
+                <label for="manualDate">Expiration Date (YYYY-MM-DD) <span class="ink-mark">*</span></label>
+                <input type="date" id="manualDate" required>
+              </div>
+
+              <div class="form-field">
+                <label for="manualNotes">Location &amp; Special Handling (Optional)</label>
+                <input type="text" id="manualNotes" placeholder="e.g. Keep chilled, medicine cabinet, dry cupboard">
+              </div>
+
+              <div class="form-actions-right">
+                <button type="reset" class="btn btn-secondary">Clear Fields</button>
+                <button type="submit" class="btn btn-seal">Inscribe to Ledger</button>
+              </div>
+            </form>
+          </div>
+        </section>
+
+        <!-- =========================================================================
+             TAB 3: VIEW ITEMS (THE MAIN LEDGER)
+             ========================================================================= -->
+        <section id="tab-view" class="tab-content">
+          <div class="section-heading">
+            <h2 class="page-title">The Master Inventory Ledger</h2>
+            <p class="page-description">Chronological ledger of all household items, calculated countdowns, and safety classifications.</p>
+          </div>
+
+          <!-- Summary Metric Plates -->
+          <div class="metric-plates-grid">
+            <div class="metric-plate plate-total">
+              <span class="plate-label">Registered Items</span>
+              <span class="plate-number" id="plateTotal">0</span>
+              <span class="plate-footnote">Active in ledger</span>
+            </div>
+
+            <div class="metric-plate plate-expired">
+              <span class="plate-label">Expired</span>
+              <span class="plate-number" id="plateExpired">0</span>
+              <span class="plate-footnote">Past validity</span>
+            </div>
+
+            <div class="metric-plate plate-warning">
+              <span class="plate-label">Expiring Soon</span>
+              <span class="plate-number" id="plateSoon">0</span>
+              <span class="plate-footnote">Within 7 days</span>
+            </div>
+
+            <div class="metric-plate plate-safe">
+              <span class="plate-label">Safe &amp; Sound</span>
+              <span class="plate-number" id="plateSafe">0</span>
+              <span class="plate-footnote">Beyond 7 days</span>
+            </div>
+          </div>
+
+          <!-- Ledger Search & Filtering Toolbar -->
+          <div class="ledger-toolbar">
+            <div class="search-input-wrapper">
+              <svg class="svg-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="11" cy="11" r="8"/>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+              </svg>
+              <input type="search" id="ledgerSearchInput" placeholder="Search by name, category, or notes..." autocomplete="off">
+            </div>
+
+            <div class="toolbar-controls-row">
+              <select id="ledgerCategoryFilter" aria-label="Filter by category">
+                <option value="">All Categories</option>
+              </select>
+
+              <div class="status-ribbon-filters" role="tablist">
+                <button class="status-tab active" data-status="ALL">All Records</button>
+                <button class="status-tab" data-status="ALERTS">Alerts Only</button>
+                <button class="status-tab" data-status="EXPIRED">Expired</button>
+                <button class="status-tab" data-status="EXPIRING_SOON">Expiring Soon</button>
+                <button class="status-tab" data-status="SAFE">Safe</button>
+              </div>
+
+              <button id="refreshLedgerBtn" class="btn btn-secondary btn-icon-only" title="Refresh records" aria-label="Refresh records">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="23 4 23 10 17 10"/>
+                  <polyline points="1 20 1 14 7 14"/>
+                  <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <!-- Ledger Table -->
+          <div class="ledger-table-container">
+            <table class="ledger-table">
+              <thead>
+                <tr>
+                  <th style="width: 55px;">No.</th>
+                  <th>Designation</th>
+                  <th>Category</th>
+                  <th style="width: 65px;">Qty</th>
+                  <th>Expiry Date</th>
+                  <th>Time Remaining</th>
+                  <th>Classification</th>
+                  <th>Notes &amp; Location</th>
+                  <th style="width: 80px; text-align: center;">Action</th>
+                </tr>
+              </thead>
+              <tbody id="ledgerTableBody">
+                <!-- Dynamically populated via app.js -->
+              </tbody>
+            </table>
+
+            <div id="ledgerEmptyState" class="ledger-empty-state hidden">
+              <div class="empty-icon-seal">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                  <circle cx="12" cy="12" r="10"/>
+                  <line x1="8" y1="12" x2="16" y2="12"/>
+                </svg>
+              </div>
+              <h3>No Inscriptions Found</h3>
+              <p>No matching inventory entries correlate with your current search query or filter selection.</p>
+            </div>
+          </div>
+        </section>
+
+        <!-- =========================================================================
+             TAB 4: EDIT PROFILE
+             ========================================================================= -->
+        <section id="tab-profile" class="tab-content">
+          <div class="section-heading">
+            <h2 class="page-title">Curator Profile &amp; Preferences</h2>
+            <p class="page-description">Configure your username, credentials, and expiry alert notification preferences.</p>
+          </div>
+
+          <div class="parchment-card form-card-centered">
+            <form id="profileForm" class="parchment-form">
+              <div class="form-field">
+                <label for="profileUsername">Username <span class="ink-mark">*</span></label>
+                <input type="text" id="profileUsername" required autocomplete="username">
+              </div>
+
+              <div class="form-field">
+                <label for="profileDisplayName">Display Title / Name</label>
+                <input type="text" id="profileDisplayName" placeholder="e.g. Master of the House" autocomplete="name">
+              </div>
+
+              <div class="form-field">
+                <label for="profilePassword">New Password <span class="ink-mark">*</span></label>
+                <input type="password" id="profilePassword" required autocomplete="new-password">
+                <small class="field-hint">Used for unlocking the ledger upon opening.</small>
+              </div>
+
+              <div class="preference-box">
+                <h4>System Notifications</h4>
+                <p>Receive immediate alerts whenever goods are nearing expiry date.</p>
+                <button type="button" id="enableNotificationsBtn" class="btn btn-secondary">
+                  <svg class="svg-icon-btn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+                    <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+                  </svg>
+                  <span id="notifBtnLabel">Enable Browser Notifications</span>
+                </button>
+              </div>
+
+              <div class="form-actions-right">
+                <button type="submit" class="btn btn-seal">Save Profile Changes</button>
+              </div>
+            </form>
+          </div>
+        </section>
+
+      </div>
+      <div class="page-edge-right"></div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="ledger-footer">
+      <p>Expiry Alert System &bull; Digital Book Ledger &bull; Core Java 17 Backend &bull; Shared CSV Storage</p>
+    </footer>
+  </div>
+
+  <!-- Toast Notification System -->
+  <div id="toastShelf" class="toast-shelf" aria-live="polite"></div>
 
   <script src="app.js"></script>
 </body>
