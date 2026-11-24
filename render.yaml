@@ -1,8 +1,16 @@
 services:
   - type: web
-    name: expiry-management
+    name: expiry-alert-ledger
     runtime: docker
-    plan: free
+    plan: starter
+    numInstances: 1
+    healthCheckPath: /status/alive
+    disk:
+      name: ledger-data
+      mountPath: /var/data
+      sizeGB: 1
     envVars:
-      - key: PORT
-        value: 8080
+      - key: LEDGER_BROWSER_DATA
+        value: /var/data/ledger
+      - key: TZ
+        value: Asia/Kolkata

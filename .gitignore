@@ -29,3 +29,7 @@ data/profile*
 .env.*
 push.bat
 commit_and_push.bat
+
+browser-data/
+.jpro/
+RUNNING_PID

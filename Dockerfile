@@ -1,17 +1,25 @@
-# Stage 1: Build the Java source code
-FROM eclipse-temurin:17-jdk-alpine AS builder
-WORKDIR /app
+FROM eclipse-temurin:25-jdk-jammy AS build
+RUN apt-get update && apt-get install -y --no-install-recommends maven unzip && rm -rf /var/lib/apt/lists/*
+WORKDIR /build
+COPY pom.xml ./
 COPY src ./src
-RUN mkdir -p bin && javac -d bin src/model/*.java src/service/*.java src/storage/*.java src/util/*.java src/app/*.java src/web/*.java
+RUN mvn -B -Pjpro -DskipTests jpro:release \
+    && mkdir /jpro \
+    && unzip -q target/ledger-jpro.zip -d /jpro \
+    && launcher="$(find /jpro -type f -path '*/bin/start.sh' -print -quit)" \
+    && test -n "$launcher" \
+    && mkdir /release \
+    && cp -a "${launcher%/bin/start.sh}/." /release/
 
-# Stage 2: Minimal Runtime Image
-FROM eclipse-temurin:17-jre-alpine
+FROM eclipse-temurin:25-jre-jammy
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      libgtk-3-0 libgl1 libx11-6 libxtst6 libxi6 libxrender1 libfontconfig1 \
+      fonts-dejavu-core tesseract-ocr tesseract-ocr-eng gosu \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --system --uid 10001 --create-home ledger
 WORKDIR /app
-COPY --from=builder /app/bin ./bin
-COPY web ./web
-COPY data ./data
-
-ENV PORT=8080
+COPY --from=build --chown=ledger:ledger /release/ ./
+COPY --chmod=755 deploy/start.sh /usr/local/bin/ledger-start
+ENV LEDGER_BROWSER_DATA=/var/data/ledger PORT=8080
 EXPOSE 8080
-
-CMD ["java", "-cp", "bin", "web.WebServer"]
+ENTRYPOINT ["/usr/local/bin/ledger-start"]

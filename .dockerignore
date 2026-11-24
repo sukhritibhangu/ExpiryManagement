@@ -1,4 +1,13 @@
-bin/
-.git/
+.git
+.gitignore
+target
+bin
+lib
+data
+browser-data
+web
 *.bat
 *.md
+.env
+.env.*
+docs

@@ -1,416 +1,119 @@
-# Expiry Alert System 🥫⏰
+# Expiry Alert Ledger
 
-[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/sukhritibhangu/ExpiryManagement)
+A JavaFX workspace for recording inventory, tracking expiry dates and deciding which stock needs attention. The design takes inspiration from the reference workspace navigation, summary cards and expiry queue. [Reference dashboard](https://inventoryjavaproject.vercel.app/) The desktop application works with the original CSV inventory and with an optional H2 database. The JPro profile serves the same JavaFX screens over WebSockets.
 
-A beginner-friendly, pure **Core Java** console application designed for households, shared apartments, pantries, and small retail/pharmacy inventories to track item expiration dates, minimize food waste, and alert users about expiring goods.
+![JavaFX dashboard](docs/dashboard.png)
 
-Built adhering to clean **Object-Oriented Programming (OOP)** principles using modern Java (`java.time.LocalDate`) and persistent CSV local storage, with zero external libraries or heavy frameworks.
+![JavaFX inventory](docs/inventory.png)
 
----
+## Features
 
-## 📌 Project Purpose
+- Dashboard metrics and charts calculated from inventory records, with quick actions, upcoming expiries and recent changes from the current session.
+- Product CRUD, detail view, name and category search, sortable columns, combined category and expiry filters, CSV reports and undo for the latest deletion in the current session.
+- Six expiry bands, countdowns and an interactive month calendar. Dates are recalculated when the host day changes.
+- JavaFX category, health, quantity and expiry-date charts. The monthly series counts the expiry dates on current records. Unit prices are optional and totals use the currency entered by the inventory owner.
+- Label OCR with Tesseract, an editable preview, validation, and explicit confirmation before saving.
+- Configurable expiry reminders, persistent read state and workspace preferences, keyboard shortcuts and reduced motion.
 
-Every year, households and small businesses throw away significant amounts of food, medicine, and perishables simply because expiry dates go unnoticed. The **Expiry Alert System** provides:
-- A straightforward command-line interface to log and organize perishable items.
-- Automatic notifications every time the application launches, flagging anything already expired or expiring within 7 days.
-- Full local data persistence in CSV format so records survive restarts without needing any database setup.
+## Desktop
 
----
+Install a JDK and Maven 3.9. The desktop source targets Java 17 and uses JavaFX 21.0.5. Open a terminal in this directory.
 
-## ✨ Key Features
-
-1. **Automatic Startup Expiry Alerts**
-   - Instantly checks and alerts you on startup if any items are already expired or expiring soon.
-2. **Standard Expiry Rules**
-   - 🔴 **Expired:** Expiry date is before today (`< today`).
-   - 🟡 **Expiring Soon:** Expiry date is within the next 7 days (`today <= expiry <= today + 7 days`).
-   - 🟢 **Safe:** Expiry date is more than 7 days away (`> today + 7 days`).
-3. **Interactive Console Menu**
-   - `1. Add an item` - Captures name, category, quantity, expiry date, and optional notes.
-   - `2. View all items` - Formats all stored items in a clear ASCII table with real-time countdowns.
-   - `3. View expiry alerts` - Filters out safe items to focus only on urgent items.
-   - `4. Search items` - Flexible case-insensitive search matching item names or categories.
-   - `5. Delete an item` - Removes an item by ID with confirmation.
-   - `6. Exit` - Safely closes the session with confirmed CSV persistence.
-4. **Input Validation**
-   - Strictly validates dates (`YYYY-MM-DD`) against real calendar days (e.g., rejects `2026-02-30`).
-   - Ensures quantities are positive integers (> 0).
-   - Validates menu selections and handles text vs numeric input gracefully without crashing.
-5. **CSV Persistence & Smart Onboarding**
-   - Automatically saves all changes to `data/inventory.csv`.
-   - On first launch, if no CSV data is detected, realistic starter items (e.g., milk, bread, medicine, eggs) are automatically created so you can explore all features immediately.
-6. **Serializable Backup**
-   - Every change also writes `data/inventory.snapshot` through `ObjectOutputStream`.
-   - If the CSV is empty or missing at startup, the snapshot is deserialized with `ObjectInputStream` and the CSV is rebuilt from it.
-   - The CSV always wins when it has rows, so the snapshot never overwrites newer data.
-7. **Structured Logging**
-   - `java.util.logging` records loads, saves, adds, deletes and failures with timestamps and severity levels.
-   - Console output stays readable; warnings and errors go to stderr.
-8. **Optional JDBC Backend (H2)**
-   - Flip one flag to store the inventory in SQL instead of CSV: `-Dledger.storage=jdbc` or `LEDGER_STORAGE=jdbc`.
-   - Uses `java.sql` with prepared statements, a transaction per save and an embedded H2 file database (`data/inventory.mv.db`).
-   - CSV stays the default, so no extra downloads are required for normal use.
-9. **JavaFX Desktop App**
-   - A native window with the same ledger: add/delete dialogs, live search, alerts, double-click details, keyboard shortcuts.
-   - Built from one `pom.xml`; run it with `mvn javafx:run`.
-
----
-
-## 📂 Folder Structure
-
-```
-JAVA_Project/
-│
-├── data/
-│   ├── inventory.csv          # Shared CSV persistence (primary store)
-│   └── inventory.snapshot     # Serializable backup, recreated automatically
-│
-├── web/                       # Modern Frontend Single Page App
-│   ├── index.html             # Dashboard with alert banner, stat cards, search & modal
-│   ├── style.css              # Responsive modern design & color-coded badges
-│   └── app.js                 # Dynamic UI logic, instant search/filtering & REST API calls
-│
-├── pom.xml                    # Maven build: H2 (JDBC) + JavaFX dependencies
-│
-├── src/
-│   ├── gui/
-│   │   └── LedgerApp.java     # JavaFX Application (table, dialogs, event handlers)
-│   ├── model/
-│   │   ├── InventoryEntry.java # Abstract Serializable base: id, name, category, notes
-│   │   ├── Expirable.java     # Interface with default daysUntilExpiry() methods
-│   │   ├── ExpiryStatus.java  # Enum: EXPIRED, EXPIRING_SOON, SAFE
-│   │   └── Item.java          # extends InventoryEntry, implements Expirable
-│   │
-│   ├── service/
-│   │   ├── ExpiryService.java # Expiry rules, day calculations, and alert filtering
-│   │   └── ItemService.java   # Business logic, ID auto-increment, and CRUD coordination
-│   │
-│   ├── storage/
-│   │   ├── ItemRepository.java  # Storage interface (CSV or JDBC)
-│   │   ├── CsvStorage.java    # CSV file reader/writer, escaping, and sample data seeding
-│   │   ├── JdbcStorage.java   # java.sql / H2 implementation with transactions
-│   │   ├── StorageFactory.java # Picks csv or jdbc from -Dledger.storage / LEDGER_STORAGE
-│   │   ├── SampleData.java    # Starter items for a fresh install
-│   │   └── SnapshotStorage.java # ObjectOutputStream/ObjectInputStream backup
-│   │
-│   ├── util/
-│   │   └── AppLogging.java    # One-time java.util.logging console configuration
-│   │
-│   ├── app/
-│   │   └── Main.java          # Terminal UI, menu loop, validation, and table printing
-│   │
-│   └── web/
-│       └── WebServer.java     # Pure Core Java HTTP Server & REST API
-│
-├── compile.bat                # Compiles all packages (app, model, service, storage, web)
-├── run.bat                    # Launches Console application
-├── run-web.bat                # Launches Web dashboard and opens browser automatically
-└── README.md                  # Project documentation
-```
-
----
-
-## 🛠️ Requirements
-
-- **Java Development Kit (JDK) 17** or newer
-- Terminal or Command Prompt (PowerShell, CMD, Bash, or Zsh)
-- Optional: **Apache Maven 3.9+** — needed for the JDBC backend and the JavaFX app
-- Optional: **H2 driver** (`h2-*.jar`) and the **JavaFX SDK** — Maven downloads both automatically; nothing else to install
-
----
-
-## 🧭 Java Topics Demonstrated
-
-| Topic | Where in the code |
-| --- | --- |
-| Packages and project structure | `model`, `service`, `storage`, `util`, `app`, `web` |
-| Encapsulation and validation | Private fields in `InventoryEntry`/`Item`, `Objects.requireNonNull`, quantity check |
-| Inheritance and abstract classes | `Item extends InventoryEntry`; abstract `getEntryType()` and `getSummary()` |
-| Interfaces and default methods | `Expirable` implemented by `Item`; `HttpHandler` implemented by the web handlers |
-| Method and constructor overloading | `ExpiryService.calculateStatus`/`getDaysRemaining`, `CsvStorage()`, `SnapshotStorage()`, `ItemService(...)` |
-| Nested classes | `StaticFileHandler`, `ItemsApiHandler`, `AlertsApiHandler`, `ProfileApiHandler`, `LoginApiHandler` inside `WebServer` |
-| Collection framework | `ArrayList`, `List`, `Map`/`HashMap`, `Optional`, `Comparator`, `Collections.unmodifiableList` |
-| Generics and streams | `List<Item>`, `Optional<Item>`, `items.stream()` in startup alerts |
-| Exception handling | try-with-resources, `IOException`, `NumberFormatException`, `DateTimeParseException`, corrupt-row recovery |
-| File I/O | `BufferedReader`/`BufferedWriter`, `FileReader`/`FileWriter`, `Files`, `Path` |
-| Serialization and deserialization | `InventoryEntry implements Serializable`, `SnapshotStorage` uses `ObjectOutputStream`/`ObjectInputStream` |
-| Logging | `java.util.logging` in `ItemService`, `ExpiryService`, `CsvStorage`, `SnapshotStorage`, `WebServer`; formatted by `util.AppLogging` |
-| Enums and modern Java | `ExpiryStatus`, enhanced `switch`, pattern matching for `instanceof`, lambdas |
-| Build tooling | Maven (`pom.xml`) plus `compile.bat`, `run.bat`, `run-web.bat`, `Dockerfile` |
-| JDBC | `JdbcStorage` (`java.sql`, prepared statements, transactions), H2 dependency in `pom.xml`; enable with `-Dledger.storage=jdbc` |
-| JavaFX GUI | `gui/LedgerApp` extends `Application`; `TableView`, `Dialog`, `DatePicker`, `Alert` |
-| JavaFX events | `setOnAction` buttons, search `textProperty` listener, `TableRow` double-click, `Delete` key handler, `Ctrl+N` accelerator, Save-button event filter |
-
-All 13 syllabus topics are now represented in the codebase.
-
----
-
-## 🧱 Build with Maven (JDBC + JavaFX)
-
-Maven is optional for the console app and the web dashboard, and required for the JDBC backend and the JavaFX window.
-
-```bash
-mvn clean package      # compiles all 16 sources, builds target/expiry-alert-ledger-1.0.0.jar
-mvn exec:java          # console app (CSV mode)
-mvn javafx:run         # JavaFX desktop window
-```
-
-On the first run Maven downloads two dependencies into `~/.m2` (about 40 MB, one time only):
-
-| Dependency | Version | Needed for |
-| --- | --- | --- |
-| `com.h2database:h2` | 2.3.232 | JDBC backend |
-| `org.openjfx:javafx-controls` | 21.0.5 | JavaFX window (platform jars for your OS are fetched too) |
-
-To run the jar Maven produced (console app, CSV mode):
-
-```bash
-java -jar target/expiry-alert-ledger-1.0.0.jar
-```
-
-## 🗄️ JDBC Storage (H2)
-
-CSV is the default. To keep the inventory in SQL instead:
-
-```bash
-# Console
-mvn exec:java -Dledger.storage=jdbc
-
-# Web dashboard (custom main class)
-mvn exec:java -Dexec.mainClass=web.WebServer -Dledger.storage=jdbc
-
-# Plain java, after copying the driver: mvn dependency:copy-dependencies -DincludeArtifactIds=h2
-java -Dledger.storage=jdbc -cp "bin:lib/*" app.Main
-java -Dledger.storage=jdbc -cp "bin:lib/*" web.WebServer 8080
-```
-
-On Windows the classpath separator is `;` — `-cp "bin;lib\*"`. The same switch works as an environment variable:
-
-```bash
-LEDGER_STORAGE=jdbc LEDGER_DB_URL=jdbc:h2:./data/inventory java -cp "bin:lib/*" web.WebServer 8080
-```
-
-| Detail | Value |
-| --- | --- |
-| Driver | `org.h2.Driver` (loaded reflectively, so the project compiles without it) |
-| Table | `items (id, name, category, quantity, expiry_date, notes)` created on first connect |
-| Database file | `data/inventory.mv.db` |
-| Saving | `DELETE` + batched `INSERT` inside one transaction, rolled back on failure |
-| CSV while JDBC is active | Left untouched; the serializable snapshot is still written after every change |
-| Missing driver | Clear error telling you to add `h2-*.jar` to the classpath, or use `-Dledger.storage=csv` |
-
-## 🖥️ JavaFX Desktop App
-
-```bash
+```powershell
+mvn test
 mvn javafx:run
 ```
 
-Needs a graphical desktop session (it cannot start in a headless terminal — you will see `Unable to open DISPLAY`). What the window offers:
+Use a separate terminal to run the console application.
 
-- Table of every item with colour-coded rows (red = expired, amber = expiring within 7 days).
-- **Add item** dialog with validation, **Delete** with confirmation, **Refresh**, **Alerts** summary.
-- Live filtering as you type in the search field; double-click a row for full details.
-- `Ctrl+N` opens the add dialog, `Delete` removes the selected row.
-- Uses the same `ItemService`, so CSV/JDBC selection and the snapshot backup behave identically.
-
-## 🚀 How to Compile and Run
-
-Open your terminal in the root directory of the project (`JAVA_Project`):
-
-### 1. Compile the Source Code
-
-Compile all `.java` files into a `bin` directory:
-
-#### On Windows (PowerShell / CMD):
-```cmd
-javac -d bin src\model\*.java src\service\*.java src\storage\*.java src\util\*.java src\app\*.java src\web\*.java
-```
-*Or simply run the helper script:*
-```cmd
-.\compile.bat
+```powershell
+mvn compile exec:java
 ```
 
-#### On Linux / macOS (Bash / Zsh):
+The supplied data/inventory.csv stays in the unpacked project. An existing six-column CSV upgrades on the first successful write. The database backend upgrades an existing H2 items table in place. Back up data before opening it in the new version. If switching from CSV to a new H2 database, first run in CSV mode and save a record to create the Java serialization snapshot. Then switch on JDBC. An uninitialized database can restore the snapshot. Keep one desktop, console or legacy server writer per data store.
+
+```powershell
+$env:LEDGER_STORAGE = 'jdbc'
+$env:LEDGER_DB_URL = 'jdbc:h2:./data/inventory'
+mvn javafx:run
+```
+
+The optional LEDGER_DB_USER and LEDGER_DB_PASSWORD variables supply H2 credentials. Use Remove-Item Env:LEDGER_STORAGE to switch back to the default CSV backend. New installations without a CSV or a snapshot use the original starter records. A saved empty inventory stays empty.
+
+For desktop OCR, install Tesseract 5 with English trained data and make its executable available on PATH. On Windows you can set the executable explicitly before launching.
+
+```powershell
+$env:LEDGER_TESSERACT = 'C:\Program Files\Tesseract-OCR\tesseract.exe'
+mvn javafx:run
+```
+
+The label parser accepts ISO and day-first dates with a visible expiry or manufacture label. Review all OCR fields, especially dates. A missing executable, unreadable image or empty OCR output displays an error and creates no product. [Tesseract installation documentation](https://tesseract-ocr.github.io/tessdoc/Installation.html)
+
+## JPro browser mode
+
+Use JDK 25 with Maven and set JAVA_HOME to that JDK. The browser profile compiles for Java 22 against JavaFX 24.0.2. JPro 2026.3.0 bundles its patched JavaFX runtime in the release. Build desktop and browser profiles with a clean target when switching between them. JPro Maven coordinates are resolved from JPro's Maven repository. [JPro documentation](https://github.com/JPro-one/JPro-Documentation)
+
+```powershell
+$env:LEDGER_BROWSER_DATA = Join-Path $PWD 'browser-data'
+mvn clean
+mvn -Pjpro "-Dledger.port=8080" jpro:run
+```
+
+Open http://localhost:8080/ and create a private workspace. Save the generated workspace key to reopen it. Each workspace has a dedicated H2 database and preferences under LEDGER_BROWSER_DATA. The server stores a SHA-256 digest of the generated key as the directory name. A workspace key is a bearer credential with no password recovery. One browser session at a time may hold a workspace's write lock. The server releases that lock when the JPro session closes. Browser and desktop data paths are independent.
+
+PNG and JPEG uploads use the JPro file picker. On the server Tesseract processes the image, and the browser receives the JavaFX review form. The JPro release also supports triggering a browser CSV download. Camera capture is outside this version. On devices that offer the camera through their browser or operating-system file picker, a photo can be selected as an image.
+
+For a packaged host release, build on the target platform or set -Dledger.release.platform=linux for Linux x86-64:
+
 ```bash
-javac -d bin src/model/*.java src/service/*.java src/storage/*.java src/util/*.java src/app/*.java src/web/*.java
+mvn -B -Pjpro -DskipTests jpro:release
 ```
 
-### 2. Run the Application
+## Deploy on Render
 
-Execute the `Main` class with the compiled `bin` classpath:
+JPro lists development and educational use as free. Students and teachers can request a licence with an educational email address. Confirm that the issued licence covers the intended public deployment before publishing. Render requires a paid instance for a persistent disk. [JPro pricing](https://www.jpro.one/pricing) · [Render persistent disks](https://render.com/docs/disks)
 
-#### Windows / Linux / macOS:
+For a container check on a Linux Docker host:
+
 ```bash
-java -cp bin app.Main
-```
-*Or on Windows, run the one-click launcher:*
-```cmd
-.\run.bat
+docker build -t expiry-alert-ledger .
+docker volume create ledger-data
+docker run --rm -p 8080:8080 -e PORT=8080 -v ledger-data:/var/data expiry-alert-ledger
 ```
 
----
+After licensing and the Docker check:
 
-## 🖥️ Example Console Output
+1. Push the upgrade branch to a private GitHub repository. Keep runtime inventories and keys out of the repository.
+2. In Render choose **New → Blueprint**, connect the repository and select the upgrade branch. The root render.yaml sets up a Docker web service, one instance, a 1 GB disk and a JPro health check.
+3. Deploy. Render supplies PORT and terminates HTTPS for the public URL. Keep TLS enabled for workspace keys. Set LEDGER_BROWSER_DATA to the directory on the mounted disk.
+4. Create two temporary workspaces through the assigned URL. Verify each sees only its own records, upload a sample label, export a report and restart the service to verify disk persistence.
 
-### 1. Startup & Expiry Warning
-```
-===================================================================
-                    EXPIRY ALERT SYSTEM                            
-        Smart Household & Small Inventory Expiry Tracker           
-===================================================================
-*******************************************************************
-  * AUTOMATIC EXPIRY ALERT: 4 item(s) need immediate attention! *
-  * [!] EXPIRED: 1 item(s) have passed their expiration date!    *
-  * [!] EXPIRING SOON: 3 item(s) expire within the next 7 days!  *
-*******************************************************************
+Windows Application Control blocked the patched JavaFX font DLL on the verification machine. The JPro release built, but the local browser workflow and Docker runtime remain unverified. The Docker and Render configurations are supplied for validation on the hosting platform. This project has no deployed public URL. [Render Docker deployments](https://render.com/docs/docker) · [Render WebSockets](https://render.com/docs/websocket)
 
--------------------------------------------------------------------
- 1. Add an item
- 2. View all items
- 3. View expiry alerts
- 4. Search items
- 5. Delete an item
- 6. Exit
--------------------------------------------------------------------
-Enter your choice (1-6): 2
-```
+## Architecture and Java concepts
 
-### 2. Viewing All Items Table
-```
---- All Inventory Items ---
-+-----+----------------------+------------+-----+------------+----------------------+------------------+---------------------------+
-| ID  | Name                 | Category   | Qty | Expiry     | Days Left            | Status           | Notes                     |
-+-----+----------------------+------------+-----+------------+----------------------+------------------+---------------------------+
-| 1   | Whole Wheat Bread    | Bakery     | 1   | 2026-09-02 | Expired 2 days ago   | [EXPIRED]        | Check for mold before ... |
-| 2   | Fresh Milk (1L)      | Dairy      | 2   | 2026-09-06 | 2 days left          | [EXPIRING SOON]  | Store on middle refrig... |
-| 3   | Greek Yogurt (4-pack)| Dairy      | 1   | 2026-09-09 | 5 days left          | [EXPIRING SOON]  | Berry flavor              |
-| 4   | Farm Fresh Eggs      | Poultry    | 12  | 2026-09-10 | 6 days left          | [EXPIRING SOON]  | Grade A free-range        |
-| 5   | Paracetamol 500mg    | Medicine   | 20  | 2027-03-04 | 181 days left        | [SAFE]           | First-aid kit medicine... |
-| 6   | Extra Virgin Olive...| Pantry     | 1   | 2027-09-04 | 365 days left        | [SAFE]           | Dark bottle in dry pan... |
-+-----+----------------------+------------+-----+------------+----------------------+------------------+---------------------------+
-Summary: Total: 6 | Expired: 1 | Expiring Soon (<= 7 days): 3 | Safe: 2
-```
-
-### 3. Adding a New Item
-```
-Enter your choice (1-6): 1
-
---- Add a New Item ---
-Enter item name: Cheddar Cheese
-Enter category (e.g. Dairy, Medicine, Pantry, Bakery): Dairy
-Enter quantity: 2
-Enter expiry date (YYYY-MM-DD): 2026-09-25
-Enter notes (optional, press Enter to skip): Sharp cheddar block
-
-[Success] Item added successfully!
-  ID: 7 | Name: Cheddar Cheese | Status: [SAFE] (21 days left)
-```
-
-### 4. Searching Items
-```
-Enter your choice (1-6): 4
-
---- Search Inventory ---
-Enter item name or category to search: dairy
-Found 3 matching item(s):
-
-+-----+----------------------+------------+-----+------------+----------------------+------------------+---------------------------+
-| ID  | Name                 | Category   | Qty | Expiry     | Days Left            | Status           | Notes                     |
-+-----+----------------------+------------+-----+------------+----------------------+------------------+---------------------------+
-| 2   | Fresh Milk (1L)      | Dairy      | 2   | 2026-09-06 | 2 days left          | [EXPIRING SOON]  | Store on middle refrig... |
-| 3   | Greek Yogurt (4-pack)| Dairy      | 1   | 2026-09-09 | 5 days left          | [EXPIRING SOON]  | Berry flavor              |
-| 7   | Cheddar Cheese       | Dairy      | 2   | 2026-09-25 | 21 days left         | [SAFE]           | Sharp cheddar block       |
-+-----+----------------------+------------+-----+------------+----------------------+------------------+---------------------------+
-```
-
----
-
-## 🌐 Web Dashboard & Label Scanner
-
-In addition to the console interface, the project includes a **responsive web dashboard** with label scanning, user authentication and dark/light themes, powered by a 100% pure Java HTTP server (`com.sun.net.httpserver.HttpServer`).
-
-### Interface:
-- **Desktop and phone friendly:** a floating dock navigation on every screen size, a full ledger table on wide screens, and the same ledger re-flowed into status-striped cards on phones.
-- **Two reading engines:** *Vision AI* (Google Gemini) for stamped, embossed and dot-matrix dates, or *Offline OCR* (Tesseract.js WebAssembly) which needs no key and runs entirely in the browser.
-- **Live scanner feedback:** animated scan line, progress bar, per-model diagnostics, and a raw-output panel so you can see exactly what the engine read.
-- **Date safety:** manufacturing dates (`Mfg`, `Mfd`, `Pkd`) are ignored in favour of expiry cues (`Exp`, `BB`, `Best Before`, `Use by`).
-- **Simple custom authentication:** create your own username and password on first launch to unlock the ledger, with persistent credentials and profile editing.
-- **Alerts and themes:** immediate expiry ribbon plus optional browser notifications, and a Light/Dark switcher that is remembered locally.
-- **Shared data:** syncs with `data/inventory.csv` and the console application.
-
-### 🔑 Entering your Gemini API key (Vision AI)
-
-Vision AI is optional. Without a key, switch the engine to **Offline OCR** and everything still works.
-
-1. Open <https://aistudio.google.com/apikey> and sign in with any Google account.
-2. Click **Create API key**, choose (or let it create) a project, then copy the key — it starts with `AIza` and is about 39 characters long.
-3. In the app open the **Scan** tab. Under **Gemini API key**, paste the key into the field and press **Save** (or Enter). A green `saved` chip appears next to the label.
-4. Press **Test**. This calls Google directly, verifies the key, and lists the vision models it can reach. A green `key works` chip means you are ready — press **Scan** on any label photo.
-
-Where the key lives, and what to expect:
-
-| Detail | Value |
+| Package | Responsibility |
 | --- | --- |
-| Storage | Your browser only: `localStorage` key `geminiApiKey` |
-| Sent to | `generativelanguage.googleapis.com` (Google), never to this app's Java server |
-| Default model | `gemini-2.5-flash`, falling back through `2.5-flash-lite`, `2.0-flash`, `2.0-flash-lite`, `flash-latest` |
-| Cost | The free tier is enough for label scanning |
-| Clearing it | Clear the field and press Save, or clear site data for the page |
+| model | InventoryEntry inheritance, Item encapsulation, Expirable interface, LocalDate and expiry bands |
+| service | Inventory use cases, expiry calculation and label OCR process orchestration |
+| storage | Repository abstraction, CSV file I/O, Java serialization and prepared JDBC statements |
+| gui | JavaFX controls, event handlers, generic lists and table transformations, charts and background Tasks |
+| animation | Reusable JavaFX animation routines |
+| config | Preferences, persistent workspace keys and exclusive workspace leases |
+| browser | JPro-specific startup and file handling |
+| app, util, web | Original Java console entry point, password hashing, logging and local-only legacy server |
 
-Troubleshooting (the app shows the same guidance in the **Diagnostics log** under the key field):
+The code demonstrates object creation, overloaded constructors and methods, polymorphism through the repository interface, generics, collections, exception handling, multithreading, lambdas, logging, serialization, JDBC, ChronoUnit and event-driven JavaFX.
 
-| Message | Fix |
-| --- | --- |
-| `API_KEY_INVALID` / “API key not valid” | Re-copy the key; remove quotes, spaces or line breaks |
-| “API has not been used in project … or it is disabled” | Enable the **Generative Language API** for that key's project in Google Cloud Console |
-| `PERMISSION_DENIED` | Remove API restrictions from the key, or create an unrestricted key |
-| `RESOURCE_EXHAUSTED` / quota | Wait a minute, or use Offline OCR |
-| Nothing happens on Scan | Open the Diagnostics log — every model attempt and Google's own error is recorded there |
+The original HTML/JavaScript dashboard is retained for local legacy use. The JPro deployment uses the JavaFX application and excludes those files. Legacy local profile passwords migrate to salted PBKDF2 after a successful login. The legacy API is loopback-only and its profile is separate from browser workspaces.
 
-### How to Launch the Web Frontend:
+## Tests and limits
 
-#### Windows (One-Click):
-```cmd
-.\run-web.bat
+```powershell
+mvn test
+mvn "-Dledger.fx.test=true" test
 ```
-*This will automatically compile the code, start the server, and open `http://localhost:8080` in your default browser.*
 
-#### Manual Launch (Windows / Linux / macOS):
-```bash
-java -cp bin web.WebServer 8080
-```
-Then navigate to **`http://localhost:8080`** in Chrome, Edge, or Firefox.
+The desktop interaction test requires a graphical session. Set LEDGER_TESSERACT before running the tests to include real OCR extraction. Core regression coverage includes backwards-compatible CSV and H2 data, repository persistence, save failures, exact expiry boundaries, workspace isolation, password hashing and notification preferences. The desktop test covers navigation, inventory CRUD, filters, sorting, charts, calendar, notifications, export and the scanner's failure path.
 
-### Built-in REST API Endpoints:
-- `GET /api/items` — Returns all items as JSON with calculated days remaining and status badges.
-- `GET /api/alerts` — Returns only urgent items needing attention (Expired and Expiring Soon).
-- `POST /api/items` — Adds a new item to inventory (persisted to CSV).
-- `DELETE /api/items?id={id}` — Deletes an item by ID (persisted to CSV).
-- `GET /api/profile` — Checks if an account is set up and returns public profile metadata.
-- `POST /api/profile` — Saves or updates user credentials.
-- `POST /api/login` — Verifies user credentials.
-
----
-
-## 🚀 Free Cloud Deployment (Render.com)
-
-You can deploy this application for free on **[Render](https://render.com/)** using Docker:
-
-1. Sign up / Log in to [Render](https://render.com/) (using your GitHub account).
-2. Click **New +** &rarr; **Web Service**.
-3. Select your repository: **`sukhritibhangu/ExpiryManagement`**.
-4. Render will auto-detect the `Dockerfile`:
-   - **Name:** `expiry-management` (or any name you choose)
-   - **Runtime:** `Docker`
-   - **Instance Type:** `Free`
-5. Click **Deploy Web Service**!
-6. In ~2 minutes, your live URL will be active (e.g. `https://expiry-management.onrender.com`).
-
----
-
-## 🧩 Software Design Principles
-
-- **Separation of Concerns:** Distinct model, service, storage, and presentation layers.
-- **Defensive Programming:** Null checks, empty string validation, and numeric/date format validation with friendly re-prompts.
-- **Encapsulation:** Class properties are private and manipulated only via validated getters and setters.
-- **Portability:** Uses platform-independent path resolution and ISO-8601 local dates.
+Reminder history and user preferences persist. Recent dashboard activity and delete undo are session-scoped. The monthly charts derive from expiry dates on current records because the original storage has no historical event table.
