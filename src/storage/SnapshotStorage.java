@@ -85,6 +85,11 @@ public class SnapshotStorage {
 
         try (ObjectInputStream in = new ObjectInputStream(
                 new BufferedInputStream(Files.newInputStream(path)))) {
+            in.setObjectInputFilter(java.io.ObjectInputFilter.Config.createFilter(
+                    "maxdepth=12;maxrefs=100000;maxbytes=16777216;maxarray=100000;"
+                            + "java.util.ArrayList;java.lang.Object;java.lang.Number;"
+                            + "model.Item;model.InventoryEntry;java.time.Ser;java.time.LocalDate;"
+                            + "java.math.BigDecimal;java.math.BigInteger;!*"));
             String header = in.readUTF();
             if (!SNAPSHOT_HEADER.equals(header)) {
                 LOGGER.warning("Ignoring snapshot with unexpected header: " + header);

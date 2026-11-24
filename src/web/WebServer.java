@@ -73,7 +73,7 @@ public class WebServer {
 
         for (int i = 0; i < maxAttempts; i++) {
             try {
-                server = HttpServer.create(new InetSocketAddress(currentPort), 0);
+                server = HttpServer.create(new InetSocketAddress(java.net.InetAddress.getLoopbackAddress(), currentPort), 0);
                 break;
             } catch (IOException e) {
                 currentPort++;
@@ -86,13 +86,13 @@ public class WebServer {
         }
 
         // Static files handler
-        server.createContext("/", new StaticFileHandler());
+        registerLocalContext("/", new StaticFileHandler());
 
         // API endpoints
-        server.createContext("/api/items", new ItemsApiHandler());
-        server.createContext("/api/alerts", new AlertsApiHandler());
-        server.createContext("/api/profile", new ProfileApiHandler());
-        server.createContext("/api/login", new LoginApiHandler());
+        registerLocalContext("/api/items", new ItemsApiHandler());
+        registerLocalContext("/api/alerts", new AlertsApiHandler());
+        registerLocalContext("/api/profile", new ProfileApiHandler());
+        registerLocalContext("/api/login", new LoginApiHandler());
 
         server.setExecutor(null); // default executor
         server.start();
@@ -105,6 +105,21 @@ public class WebServer {
         System.out.println(" Press Ctrl+C in console to stop the server.");
         System.out.println("===================================================================");
         LOGGER.info("Expiry Alert Ledger web server listening on port " + currentPort);
+    }
+
+    private void registerLocalContext(String path, HttpHandler handler) {
+        server.createContext(path, exchange -> {
+            String host = exchange.getRequestHeaders().getFirst("Host");
+            String origin = exchange.getRequestHeaders().getFirst("Origin");
+            String site = exchange.getRequestHeaders().getFirst("Sec-Fetch-Site");
+            if (host == null || !host.matches("(?i)(localhost|127\\.0\\.0\\.1|\\[::1\\])(?::[0-9]{1,5})?")
+                    || (origin != null && !origin.equalsIgnoreCase("http://" + host))
+                    || "cross-site".equals(site)) {
+                sendJsonError(exchange, 403, "This service accepts local requests only.");
+                return;
+            }
+            handler.handle(exchange);
+        });
     }
 
     public void stop() {
@@ -154,7 +169,6 @@ public class WebServer {
     private class ItemsApiHandler implements HttpHandler {
         @Override
         public void handle(HttpExchange exchange) throws IOException {
-            addCorsHeaders(exchange);
             String method = exchange.getRequestMethod().toUpperCase();
 
             switch (method) {
@@ -235,7 +249,6 @@ public class WebServer {
     private class AlertsApiHandler implements HttpHandler {
         @Override
         public void handle(HttpExchange exchange) throws IOException {
-            addCorsHeaders(exchange);
             if (!exchange.getRequestMethod().equalsIgnoreCase("GET")) {
                 sendResponse(exchange, 405, "application/json", "{\"error\":\"Method Not Allowed\"}".getBytes(StandardCharsets.UTF_8));
                 return;
@@ -250,12 +263,25 @@ public class WebServer {
     /**
      * REST API for /api/profile (GET, POST).
      */
+    private synchronized void saveProfile(Path path, String username, String password, String name) throws IOException {
+        Files.createDirectories(path.getParent());
+        String payload = String.format("{\"username\":\"%s\",\"passwordHash\":\"%s\",\"displayName\":\"%s\"}",
+                escapeJson(username), util.PasswordHash.create(password), escapeJson(name));
+        Path temp = Files.createTempFile(path.getParent(), "profile-", ".tmp");
+        try {
+            Files.writeString(temp, payload, StandardCharsets.UTF_8);
+            Files.move(temp, path, java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                    java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+        } finally {
+            Files.deleteIfExists(temp);
+        }
+    }
+
     private class ProfileApiHandler implements HttpHandler {
         private final Path profilePath = Paths.get("data", "profile.json");
 
         @Override
         public void handle(HttpExchange exchange) throws IOException {
-            addCorsHeaders(exchange);
             String method = exchange.getRequestMethod().toUpperCase();
 
             switch (method) {
@@ -303,13 +329,11 @@ public class WebServer {
                 displayName = username.trim();
             }
 
-            if (profilePath.getParent() != null) {
-                Files.createDirectories(profilePath.getParent());
+            if (username.length() > 100 || password.length() > 1024 || displayName.length() > 100) {
+                sendJsonError(exchange, 400, "Profile fields exceed their maximum lengths.");
+                return;
             }
-
-            String fileContent = String.format("{\"username\":\"%s\",\"password\":\"%s\",\"displayName\":\"%s\"}",
-                    escapeJson(username.trim()), escapeJson(password.trim()), escapeJson(displayName.trim()));
-            Files.writeString(profilePath, fileContent, StandardCharsets.UTF_8);
+            saveProfile(profilePath, username.trim(), password.trim(), displayName.trim());
 
             String resp = String.format("{\"success\":true,\"configured\":true,\"username\":\"%s\",\"displayName\":\"%s\"}",
                     escapeJson(username.trim()), escapeJson(displayName.trim()));
@@ -325,7 +349,6 @@ public class WebServer {
 
         @Override
         public void handle(HttpExchange exchange) throws IOException {
-            addCorsHeaders(exchange);
             String method = exchange.getRequestMethod().toUpperCase();
 
             if (method.equals("OPTIONS")) {
@@ -352,12 +375,20 @@ public class WebServer {
             try {
                 String savedJson = Files.readString(profilePath, StandardCharsets.UTF_8);
                 String savedUser = parseJsonField(savedJson, "username");
-                String savedPass = parseJsonField(savedJson, "password");
+                String savedHash = parseJsonField(savedJson, "passwordHash");
+                String legacyPassword = savedHash == null ? parseJsonField(savedJson, "password") : null;
                 String savedDisplayName = parseJsonField(savedJson, "displayName");
+                String candidate = password == null ? "" : password.trim();
 
-                if (savedUser != null && savedPass != null &&
-                    savedUser.equalsIgnoreCase(username != null ? username.trim() : "") &&
-                    savedPass.equals(password != null ? password.trim() : "")) {
+                if (savedUser != null && savedUser.equalsIgnoreCase(username != null ? username.trim() : "")
+                        && candidate.length() <= 1024
+                        && (savedHash != null ? util.PasswordHash.verify(candidate, savedHash)
+                        : legacyPassword != null && java.security.MessageDigest.isEqual(
+                                legacyPassword.getBytes(StandardCharsets.UTF_8), candidate.getBytes(StandardCharsets.UTF_8)))) {
+                    if (legacyPassword != null) {
+                        saveProfile(profilePath, savedUser, candidate,
+                                savedDisplayName == null ? savedUser : savedDisplayName);
+                    }
 
                     String resp = String.format("{\"success\":true,\"username\":\"%s\",\"displayName\":\"%s\"}",
                             escapeJson(savedUser), escapeJson(savedDisplayName != null ? savedDisplayName : savedUser));
@@ -366,7 +397,7 @@ public class WebServer {
                     sendJsonError(exchange, 401, "Invalid username or password.");
                 }
             } catch (Exception e) {
-                sendJsonError(exchange, 500, "Login verification failed: " + e.getMessage());
+                sendJsonError(exchange, 500, "Login verification failed.");
             }
         }
     }
@@ -460,11 +491,6 @@ public class WebServer {
         return params;
     }
 
-    private void addCorsHeaders(HttpExchange exchange) {
-        exchange.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
-        exchange.getResponseHeaders().set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
-        exchange.getResponseHeaders().set("Access-Control-Allow-Headers", "Content-Type");
-    }
 
     private void sendResponse(HttpExchange exchange, int statusCode, String contentType, byte[] responseBytes) throws IOException {
         exchange.getResponseHeaders().set("Content-Type", contentType);
