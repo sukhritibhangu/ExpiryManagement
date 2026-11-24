@@ -15,6 +15,8 @@ import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /**
  * Handles persistent storage of inventory items to and from a local CSV file.
@@ -25,7 +27,9 @@ import java.util.List;
  * - Auto-creates storage directory if missing.
  * - Generates beginner-friendly sample items when no data file exists.
  */
-public class CsvStorage {
+public class CsvStorage implements ItemRepository {
+
+    private static final Logger LOGGER = Logger.getLogger(CsvStorage.class.getName());
 
     private final String filePath;
     private static final String CSV_HEADER = "ID,Name,Category,Quantity,ExpiryDate,Notes";
@@ -48,6 +52,11 @@ public class CsvStorage {
 
     public String getFilePath() {
         return filePath;
+    }
+
+    @Override
+    public String describe() {
+        return "CSV file - " + filePath;
     }
 
     /**
@@ -118,13 +127,14 @@ public class CsvStorage {
                         items.add(item);
                     }
                 } catch (Exception e) {
-                    System.err.println("[Warning] Skipping corrupt row at line " + lineNumber + ": " + e.getMessage());
+                    LOGGER.warning("Skipping corrupt CSV row at line " + lineNumber + ": " + e.getMessage());
                 }
             }
         } catch (IOException e) {
-            System.err.println("[Error] Failed to read CSV file: " + e.getMessage());
+            LOGGER.log(Level.SEVERE, "Failed to read CSV file: " + filePath, e);
         }
 
+        LOGGER.fine(() -> "Loaded " + items.size() + " item(s) from " + filePath);
         return items;
     }
 
@@ -151,9 +161,10 @@ public class CsvStorage {
                     writer.newLine();
                 }
             }
+            LOGGER.fine(() -> "Saved " + items.size() + " item(s) to " + filePath);
             return true;
         } catch (IOException e) {
-            System.err.println("[Error] Failed to save items to CSV: " + e.getMessage());
+            LOGGER.log(Level.SEVERE, "Failed to save items to CSV: " + filePath, e);
             return false;
         }
     }
@@ -162,28 +173,7 @@ public class CsvStorage {
      * Creates default realistic sample items for initial onboarding.
      */
     public List<Item> createSampleItems() {
-        LocalDate today = LocalDate.now();
-        List<Item> samples = new ArrayList<>();
-
-        // 1. Expired item (demonstrates EXPIRED alert)
-        samples.add(new Item(1, "Whole Wheat Bread", "Bakery", 1, today.minusDays(2), "Check for mold before discarding"));
-        
-        // 2. Expiring soon item (in 2 days)
-        samples.add(new Item(2, "Fresh Milk (1L)", "Dairy", 2, today.plusDays(2), "Store on middle refrigerator shelf"));
-        
-        // 3. Expiring soon item (in 5 days)
-        samples.add(new Item(3, "Greek Yogurt (4-pack)", "Dairy", 1, today.plusDays(5), "Berry flavor"));
-
-        // 4. Expiring soon item (in 6 days)
-        samples.add(new Item(4, "Farm Fresh Eggs", "Poultry", 12, today.plusDays(6), "Grade A free-range"));
-
-        // 5. Safe item (in 6 months)
-        samples.add(new Item(5, "Paracetamol 500mg", "Medicine", 20, today.plusMonths(6), "First-aid kit medicine box"));
-
-        // 6. Safe item (in 1 year)
-        samples.add(new Item(6, "Extra Virgin Olive Oil", "Pantry", 1, today.plusYears(1), "Dark bottle in dry pantry"));
-
-        return samples;
+        return SampleData.createSampleItems();
     }
 
     /**

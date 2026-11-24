@@ -7,7 +7,8 @@ import model.ExpiryStatus;
 import model.Item;
 import service.ExpiryService;
 import service.ItemService;
-import storage.CsvStorage;
+import storage.StorageFactory;
+import util.AppLogging;
 
 import java.io.File;
 import java.io.IOException;
@@ -22,6 +23,7 @@ import java.time.LocalDate;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.logging.Logger;
 
 /**
  * Lightweight HTTP Web Server and REST API using standard JDK com.sun.net.httpserver.
@@ -31,6 +33,8 @@ import java.util.Map;
  */
 public class WebServer {
 
+    private static final Logger LOGGER = Logger.getLogger(WebServer.class.getName());
+
     private final ItemService itemService;
     private final ExpiryService expiryService;
     private final int port;
@@ -39,10 +43,11 @@ public class WebServer {
     public WebServer(int port) {
         this.port = port;
         this.expiryService = new ExpiryService();
-        this.itemService = new ItemService(new CsvStorage(), expiryService);
+        this.itemService = new ItemService(StorageFactory.create(), expiryService);
     }
 
     public static void main(String[] args) {
+        AppLogging.configure();
         int port = 8080;
         String envPort = System.getenv("PORT");
         if (envPort != null && !envPort.trim().isEmpty()) {
@@ -76,7 +81,7 @@ public class WebServer {
         }
 
         if (server == null) {
-            System.err.println("[Error] Could not bind to port " + port + " or fallback ports.");
+            LOGGER.severe("Could not bind to port " + port + " or fallback ports.");
             return;
         }
 
@@ -99,6 +104,7 @@ public class WebServer {
         System.out.println(" API Endpoint:    http://localhost:" + currentPort + "/api/items");
         System.out.println(" Press Ctrl+C in console to stop the server.");
         System.out.println("===================================================================");
+        LOGGER.info("Expiry Alert Ledger web server listening on port " + currentPort);
     }
 
     public void stop() {

@@ -3,10 +3,12 @@
  * 
  * Features:
  * - Simple Custom Username & Password Authentication & Profile Management
- * - Optical Character Recognition (OCR) using Tesseract.js with Laser Scanner
+ * - Label reading via Google Gemini (Vision AI) with model discovery,
+ *   retries and a human-readable diagnostics log
+ * - Offline OCR via Tesseract.js as a no-key fallback
  * - Expiry Date & Product Name Extraction Engine
- * - Digital Book Theme with Dark & Light Mode Switcher
- * - Top Ribbon Tab Navigation
+ * - Responsive shell: sticky top bar, floating dock, ledger cards on phones
+ * - Light & Dark themes with local persistence
  * - Expiry Notification Alerts on Login
  * - Zero Keyboard Emojis (Vector SVG Only)
  */
@@ -66,6 +68,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const browsePhotoBtn = document.getElementById("browsePhotoBtn");
   const cameraPhotoBtn = document.getElementById("cameraPhotoBtn");
   const runScanBtn = document.getElementById("runScanBtn");
+  const runScanBtnText = document.getElementById("runScanBtnText");
   const resetScanBtn = document.getElementById("resetScanBtn");
   const ocrConfidenceBadge = document.getElementById("ocrConfidenceBadge");
   const ocrAcceptForm = document.getElementById("ocrAcceptForm");
@@ -76,6 +79,18 @@ document.addEventListener("DOMContentLoaded", () => {
   const ocrExtractedNotes = document.getElementById("ocrExtractedNotes");
   const addScannedItemBtn = document.getElementById("addScannedItemBtn");
   const rawOcrOutput = document.getElementById("rawOcrOutput");
+
+  // DOM Elements - Vision AI Engine Switcher & Key Bar
+  const engineAiBtn = document.getElementById("engineAiBtn");
+  const engineOcrBtn = document.getElementById("engineOcrBtn");
+  const aiKeyStrip = document.getElementById("aiKeyStrip");
+  const geminiApiKeyInput = document.getElementById("geminiApiKeyInput");
+  const saveApiKeyBtn = document.getElementById("saveApiKeyBtn");
+  const testApiKeyBtn = document.getElementById("testApiKeyBtn");
+  const apiKeyStatus = document.getElementById("apiKeyStatus");
+  const aiDiagnostics = document.getElementById("aiDiagnostics");
+  const KEY_STORAGE = "geminiApiKey";
+  let activeEngine = localStorage.getItem("scanEngineMode") || "ai";
 
   // DOM Elements - Manual Add Form
   const manualAddForm = document.getElementById("manualAddForm");
@@ -115,6 +130,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Initialize
   initTheme();
+  initScanEngine();
   checkAuthStatus();
 
   // =========================================================================
@@ -136,7 +152,11 @@ document.addEventListener("DOMContentLoaded", () => {
     document.documentElement.setAttribute("data-theme", theme);
     localStorage.setItem("ledgerTheme", theme);
     if (themeLabel) {
-      themeLabel.textContent = theme === "light" ? "Parchment" : "Grimoire";
+      themeLabel.textContent = theme === "light" ? "Light" : "Dark";
+    }
+    const themeMeta = document.querySelector('meta[name="theme-color"]');
+    if (themeMeta) {
+      themeMeta.setAttribute("content", theme === "light" ? "#f4f1e9" : "#0b0f0d");
     }
   }
 
@@ -251,6 +271,8 @@ document.addEventListener("DOMContentLoaded", () => {
     bookApp.classList.remove("hidden");
 
     userDisplayName.textContent = user.displayName || user.username;
+    const initial = document.getElementById("userInitial");
+    if (initial) initial.textContent = (user.displayName || user.username || "L").trim().charAt(0);
     profileUsername.value = user.username;
     profileDisplayName.value = user.displayName || user.username;
 
@@ -490,16 +512,24 @@ document.addEventListener("DOMContentLoaded", () => {
         countClass = "countdown-warning";
       }
 
+      tr.dataset.status = item.status;
+      tr.style.setProperty(
+        "--row-accent",
+        item.status === "EXPIRED" ? "var(--danger)"
+          : item.status === "EXPIRING_SOON" ? "var(--warn)"
+          : "var(--safe)"
+      );
+
       tr.innerHTML = `
-        <td class="date-mono">#${item.id}</td>
-        <td><strong>${escapeHtml(item.name)}</strong></td>
-        <td><span class="tag-cat">${escapeHtml(item.category)}</span></td>
-        <td>${item.quantity}</td>
-        <td><code class="date-mono">${item.expiryDate}</code></td>
-        <td><span class="countdown-label ${countClass}">${escapeHtml(item.formattedDays)}</span></td>
-        <td><span class="badge ${badgeClass}">${escapeHtml(item.statusLabel)}</span></td>
-        <td style="color: var(--ink-muted); font-size: 0.88rem;">${escapeHtml(item.notes || "—")}</td>
-        <td style="text-align: center;">
+        <td class="date-mono cell-id" data-label="No.">#${item.id}</td>
+        <td class="cell-name" data-label="Item"><strong>${escapeHtml(item.name)}</strong></td>
+        <td data-label="Category"><span class="tag-cat">${escapeHtml(item.category)}</span></td>
+        <td data-label="Qty">${item.quantity}</td>
+        <td data-label="Expiry"><code class="date-mono">${item.expiryDate}</code></td>
+        <td data-label="Time left"><span class="countdown-label ${countClass}">${escapeHtml(item.formattedDays)}</span></td>
+        <td data-label="Status"><span class="badge ${badgeClass}">${escapeHtml(item.statusLabel)}</span></td>
+        <td data-label="Notes" style="color: var(--ink-muted); font-size: 0.86rem;">${escapeHtml(item.notes || "—")}</td>
+        <td class="cell-act" data-label="Action">
           <button class="btn-danger-outline delete-record-btn" data-id="${item.id}" data-name="${escapeHtml(item.name)}" title="Remove item">Delete</button>
         </td>
       `;
@@ -675,22 +705,677 @@ document.addEventListener("DOMContentLoaded", () => {
     rawOcrOutput.textContent = "Upload and decipher a label to view detected text segments.";
   });
 
+  // =========================================================================
+  // SCAN ENGINE SWITCHER & GEMINI API KEY SETUP
+  // =========================================================================
+
+  // =========================================================================
+  // SCAN ENGINE SWITCHER · API KEY STORAGE · GEMINI DIAGNOSTICS
+  // =========================================================================
+
+  // Known-good vision models, most preferred first. Live discovery extends this.
+  const FALLBACK_MODELS = [
+    "gemini-2.5-flash",
+    "gemini-2.5-flash-lite",
+    "gemini-2.0-flash",
+    "gemini-2.0-flash-lite",
+    "gemini-flash-latest",
+    "gemini-1.5-flash-latest"
+  ];
+
+  let diagStarted = false;
+
+  function normalizeApiKey(raw) {
+    return String(raw || "")
+      .trim()
+      .replace(/^["'`\s]+|["'`\s]+$/g, "")
+      .replace(/^Bearer\s+/i, "")
+      .replace(/\s+/g, "");
+  }
+
+  function getApiKey() {
+    const fromInput = geminiApiKeyInput ? geminiApiKeyInput.value : "";
+    return normalizeApiKey(fromInput || localStorage.getItem(KEY_STORAGE) || "");
+  }
+
+  function maskKey(key) {
+    if (!key) return "(empty)";
+    if (key.length <= 12) return key.slice(0, 4) + "…";
+    return key.slice(0, 6) + "…" + key.slice(-4);
+  }
+
+  function setKeyStatus(state, text) {
+    if (!apiKeyStatus) return;
+    apiKeyStatus.className = "key-status " + state;
+    apiKeyStatus.textContent = text;
+  }
+
+  function logDiag(line) {
+    if (!aiDiagnostics) return;
+    if (!diagStarted) {
+      aiDiagnostics.textContent = "";
+      diagStarted = true;
+    }
+    const stamp = new Date().toLocaleTimeString();
+    aiDiagnostics.textContent += "[" + stamp + "] " + line + "\n";
+    aiDiagnostics.scrollTop = aiDiagnostics.scrollHeight;
+  }
+
+  function resetDiag() {
+    if (!aiDiagnostics) return;
+    aiDiagnostics.textContent = "";
+    diagStarted = true;
+  }
+
+  function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  /**
+   * Turns raw Google errors into something a human can act on.
+   * This is the part that was missing: every failure used to surface as a
+   * vague "Vision AI error", so a key/quota/model problem looked identical.
+   */
+  function friendlyGeminiError(status, message) {
+    const m = String(message || "");
+    if (/API key not valid|API_KEY_INVALID|invalid api key|api key expired/i.test(m)) {
+      return "Google rejected the key (API_KEY_INVALID). Copy it again from aistudio.google.com/apikey — no quotes, spaces or line breaks.";
+    }
+    if (/API has not been used in project|SERVICE_DISABLED|has not been enabled|is disabled/i.test(m)) {
+      return "The Generative Language API is turned off for this key's project. Enable it in Google Cloud Console, or create a fresh key in Google AI Studio.";
+    }
+    if (/PERMISSION_DENIED|not authorized|caller does not have permission|API_KEY_SERVICE_BLOCKED/i.test(m)) {
+      return "This key is not permitted to call Gemini (PERMISSION_DENIED). Remove API restrictions on the key, or create an unrestricted key.";
+    }
+    if (status === 429 || /RESOURCE_EXHAUSTED|quota|rate limit/i.test(m)) {
+      return "Free-tier quota for this key is used up. Wait about a minute and retry, or switch to Offline OCR.";
+    }
+    if (status === 404 || /is not found for API version|not supported for generateContent/i.test(m)) {
+      return "This key cannot reach that model (" + m.slice(0, 110) + ").";
+    }
+    if (status === 503) {
+      return "Gemini is busy right now. Try again in a few seconds.";
+    }
+    if (status === 400) {
+      return "Google rejected the request: " + m.slice(0, 240);
+    }
+    return m.slice(0, 240) || ("HTTP " + status);
+  }
+
+  function geminiError(status, message) {
+    const err = new Error(friendlyGeminiError(status, message));
+    err.status = status;
+    err.raw = String(message || "");
+    return err;
+  }
+
+  function rankModels(names) {
+    const preferred = [
+      /^gemini-2\.5-flash$/i,
+      /^gemini-2\.5-flash-lite$/i,
+      /^gemini-flash-latest$/i,
+      /^gemini-2\.0-flash$/i,
+      /^gemini-2\.0-flash-lite$/i,
+      /^gemini-1\.5-flash-latest$/i,
+      /^gemini-1\.5-flash$/i
+    ];
+    const score = name => {
+      for (let i = 0; i < preferred.length; i++) {
+        if (preferred[i].test(name)) return i;
+      }
+      if (/flash/i.test(name)) return 20;
+      if (/pro/i.test(name)) return 40;
+      return 60;
+    };
+    return Array.from(new Set(names.map(n => String(n).replace(/^models\//, "").trim())))
+      .filter(Boolean)
+      .sort((a, b) => score(a) - score(b) || a.localeCompare(b));
+  }
+
+  async function listVisionModels(key) {
+    let res;
+    try {
+      res = await fetch(
+        "https://generativelanguage.googleapis.com/v1beta/models?pageSize=100&key=" + encodeURIComponent(key)
+      );
+    } catch (netErr) {
+      throw new Error("Could not reach Google's API. Check your internet connection (and that the page is opened over http/https, not as a local file).");
+    }
+
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      let message = body;
+      try { message = JSON.parse(body).error?.message || body; } catch (ignored) {}
+      throw geminiError(res.status, message);
+    }
+
+    const data = await res.json().catch(() => ({}));
+    const all = Array.isArray(data.models) ? data.models : [];
+    logDiag("Model list: " + all.length + " accessible with this key.");
+
+    const usable = all
+      .filter(m => {
+        const methods = m.supportedGenerationMethods || m.supported_generation_methods || [];
+        return Array.isArray(methods)
+          && methods.includes("generateContent")
+          && /gemini/i.test(m.name || "")
+          && !/embedding|aqa|tts|image-generation|imagen/i.test(m.name || "");
+      })
+      .map(m => m.name);
+
+    return rankModels(usable);
+  }
+
+  async function requestGemini(model, key, payload) {
+    const url = "https://generativelanguage.googleapis.com/v1beta/models/"
+      + encodeURIComponent(model) + ":generateContent?key=" + encodeURIComponent(key);
+
+    let res;
+    try {
+      res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+    } catch (netErr) {
+      const err = new Error("Network request to Gemini failed. A browser extension, firewall or offline state may be blocking generativelanguage.googleapis.com.");
+      err.status = 0;
+      throw err;
+    }
+
+    const raw = await res.text().catch(() => "");
+    let data = {};
+    try { data = raw ? JSON.parse(raw) : {}; } catch (ignored) {}
+
+    if (!res.ok) {
+      const message = (data.error && data.error.message) || raw.slice(0, 300) || ("HTTP " + res.status);
+      throw geminiError(res.status, message);
+    }
+    return data;
+  }
+
+  function readCandidateText(data) {
+    const candidate = data && data.candidates && data.candidates[0];
+    if (!candidate) return "";
+    const parts = (candidate.content && candidate.content.parts) || [];
+    return parts
+      .filter(p => p && typeof p.text === "string" && !p.thought)
+      .map(p => p.text)
+      .join("")
+      .trim();
+  }
+
+  function readFinishReason(data) {
+    return data && data.candidates && data.candidates[0]
+      ? data.candidates[0].finishReason
+      : undefined;
+  }
+
+  function parseJsonLoose(text) {
+    let clean = String(text || "").trim();
+    clean = clean.replace(/^```(?:json)?/i, "").replace(/```\s*$/, "").trim();
+
+    const candidates = [clean];
+    const first = clean.indexOf("{");
+    const last = clean.lastIndexOf("}");
+    if (first !== -1 && last > first) candidates.push(clean.slice(first, last + 1));
+
+    for (const candidate of candidates) {
+      try { return JSON.parse(candidate); } catch (ignored) {}
+      try { return JSON.parse(candidate.replace(/,\s*([}\]])/g, "$1")); } catch (ignored) {}
+    }
+
+    // Last resort: salvage fields from a reply that was cut off mid-JSON.
+    const grab = key => {
+      const quoted = clean.match(new RegExp('"' + key + '"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)"', "i"));
+      if (quoted) return quoted[1].replace(/\\"/g, '"').replace(/\\/g, "\\");
+      const numeric = clean.match(new RegExp('"' + key + '"\\s*:\\s*(-?\\d+)', "i"));
+      return numeric ? numeric[1] : undefined;
+    };
+    const salvaged = {
+      name: grab("name"),
+      expiryDate: grab("expiryDate"),
+      category: grab("category"),
+      quantity: grab("quantity"),
+      notes: grab("notes")
+    };
+    if (salvaged.name || salvaged.expiryDate) return salvaged;
+    return null;
+  }
+
+  function pad2(value) {
+    return String(value).padStart(2, "0");
+  }
+
+  function normalizeDate(value) {
+    const v = String(value || "").trim();
+    let m = v.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/);
+    if (m) return m[1] + "-" + pad2(m[2]) + "-" + pad2(m[3]);
+
+    m = v.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/);
+    if (m) return m[3] + "-" + pad2(m[2]) + "-" + pad2(m[1]);
+
+    m = v.match(/^(\d{1,2})[-/.](\d{4})$/);
+    if (m) {
+      const year = Number(m[2]);
+      const month = Number(m[1]);
+      const lastDay = new Date(year, month, 0).getDate();
+      return year + "-" + pad2(month) + "-" + pad2(lastDay);
+    }
+
+    if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
+    return todayIso;
+  }
+
+  function setScanProgress(percent, label) {
+    if (ocrProgressBar) ocrProgressBar.style.width = percent + "%";
+    if (ocrPercent) ocrPercent.textContent = percent + "%";
+    if (ocrStatusText) ocrStatusText.textContent = label;
+  }
+
+  function setScanBusy(busy) {
+    if (runScanBtn) runScanBtn.disabled = busy;
+    if (resetScanBtn) resetScanBtn.disabled = busy;
+    if (laserScanner) laserScanner.classList.toggle("hidden", !busy);
+    if (busy && ocrProgressCard) ocrProgressCard.classList.remove("hidden");
+  }
+
+  function saveApiKeyFromInput(quiet) {
+    const key = normalizeApiKey(geminiApiKeyInput ? geminiApiKeyInput.value : "");
+    if (!key) {
+      setKeyStatus("is-bad", "empty");
+      if (!quiet) showToast("Paste your Gemini API key first — use 'Get a free key' above.", "error");
+      return false;
+    }
+    if (key.length < 20 || !/^[A-Za-z0-9._-]+$/.test(key)) {
+      setKeyStatus("is-bad", "check key");
+      if (!quiet) showToast("That doesn't look like a Gemini key. It is usually ~39 characters and starts with AIza.", "error");
+      return false;
+    }
+    if (geminiApiKeyInput) geminiApiKeyInput.value = key;
+    localStorage.setItem(KEY_STORAGE, key);
+    setKeyStatus("is-ok", "saved");
+    if (!quiet) showToast("Key saved in this browser only. Press Test to verify it with Google.", "success");
+    return true;
+  }
+
+  async function testGeminiKey() {
+    if (!saveApiKeyFromInput(true)) {
+      showToast("Add and save an API key first, then press Test.", "error");
+      if (geminiApiKeyInput) geminiApiKeyInput.focus();
+      return;
+    }
+    const key = getApiKey();
+    resetDiag();
+    setKeyStatus("is-busy", "testing…");
+    if (testApiKeyBtn) testApiKeyBtn.disabled = true;
+    logDiag("Testing key " + maskKey(key) + " (length " + key.length + ")");
+
+    try {
+      const models = await listVisionModels(key);
+      if (models.length === 0) {
+        throw new Error("The key is valid, but no Gemini text/vision model is available for it. Check that the Generative Language API is enabled for the project.");
+      }
+      logDiag("Models that accept images: " + models.slice(0, 6).join(", "));
+
+      const model = models[0];
+      logDiag("Sending a tiny text probe to " + model + " …");
+      const probe = await requestGemini(model, key, {
+        contents: [{ role: "user", parts: [{ text: "Reply with the single word: READY" }] }],
+        generationConfig: { maxOutputTokens: 16, temperature: 0 }
+      });
+      const reply = readCandidateText(probe);
+      logDiag("Probe reply: " + (reply || "(empty)"));
+
+      setKeyStatus("is-ok", "key works");
+      showToast("Key works — " + model + " is ready. Scan a label now.", "success");
+    } catch (err) {
+      logDiag("FAILED: " + err.message);
+      setKeyStatus("is-bad", "key failed");
+      showToast("Key test failed: " + err.message, "error");
+    } finally {
+      if (testApiKeyBtn) testApiKeyBtn.disabled = false;
+    }
+  }
+
+  function initScanEngine() {
+    const saved = normalizeApiKey(localStorage.getItem(KEY_STORAGE) || "");
+    if (saved && geminiApiKeyInput) {
+      geminiApiKeyInput.value = saved;
+      setKeyStatus("is-ok", "saved");
+    } else {
+      setKeyStatus("is-empty", "not set");
+    }
+
+    if (engineAiBtn) engineAiBtn.addEventListener("click", () => setScanEngine("ai"));
+    if (engineOcrBtn) engineOcrBtn.addEventListener("click", () => setScanEngine("ocr"));
+    if (saveApiKeyBtn) saveApiKeyBtn.addEventListener("click", () => saveApiKeyFromInput(false));
+    if (testApiKeyBtn) testApiKeyBtn.addEventListener("click", testGeminiKey);
+
+    if (geminiApiKeyInput) {
+      geminiApiKeyInput.addEventListener("keydown", e => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          saveApiKeyFromInput(false);
+        }
+      });
+      geminiApiKeyInput.addEventListener("input", () => {
+        const typed = normalizeApiKey(geminiApiKeyInput.value);
+        const stored = normalizeApiKey(localStorage.getItem(KEY_STORAGE) || "");
+        if (!typed) setKeyStatus("is-empty", "not set");
+        else if (typed === stored) setKeyStatus("is-ok", "saved");
+        else setKeyStatus("is-empty", "unsaved");
+      });
+    }
+
+    setScanEngine(activeEngine);
+  }
+
+  function setScanEngine(engine) {
+    activeEngine = engine;
+    localStorage.setItem("scanEngineMode", engine);
+
+    if (engine === "ai") {
+      if (engineAiBtn) engineAiBtn.classList.add("active");
+      if (engineOcrBtn) engineOcrBtn.classList.remove("active");
+      if (aiKeyStrip) aiKeyStrip.classList.remove("hidden");
+      if (runScanBtnText) runScanBtnText.textContent = "Read this label";
+    } else {
+      if (engineOcrBtn) engineOcrBtn.classList.add("active");
+      if (engineAiBtn) engineAiBtn.classList.remove("active");
+      if (aiKeyStrip) aiKeyStrip.classList.add("hidden");
+      if (runScanBtnText) runScanBtnText.textContent = "Read with offline OCR";
+    }
+  }
+
+  function fileToBase64(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = reader.result;
+        const commaIdx = result.indexOf(",");
+        resolve(commaIdx !== -1 ? result.substring(commaIdx + 1) : result);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+
+  /**
+   * Shrinks a photo before it is sent to Gemini.
+   * Phone cameras produce 4-12 MB files, and inline image data is base64
+   * inflated by another 33%, which is a common reason scans failed outright.
+   * 1600 px on the long edge keeps printed expiry dates crisp.
+   */
+  async function prepareImageForGemini(file) {
+    const fallback = async () => ({
+      base64Data: await fileToBase64(file),
+      mimeType: file.type || "image/jpeg",
+      resized: false
+    });
+
+    if (typeof window === "undefined" || !window.createImageBitmap) return fallback();
+
+    try {
+      const bitmap = await createImageBitmap(file);
+      const maxEdge = 1600;
+      const scale = Math.min(1, maxEdge / Math.max(bitmap.width, bitmap.height));
+      const width = Math.max(1, Math.round(bitmap.width * scale));
+      const height = Math.max(1, Math.round(bitmap.height * scale));
+
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        if (bitmap.close) bitmap.close();
+        return fallback();
+      }
+      ctx.drawImage(bitmap, 0, 0, width, height);
+      if (bitmap.close) bitmap.close();
+
+      const dataUrl = canvas.toDataURL("image/jpeg", 0.88);
+      const commaIdx = dataUrl.indexOf(",");
+      return {
+        base64Data: commaIdx !== -1 ? dataUrl.substring(commaIdx + 1) : dataUrl,
+        mimeType: "image/jpeg",
+        resized: scale < 1 || file.size > 900 * 1024
+      };
+    } catch (err) {
+      return fallback();
+    }
+  }
+
   runScanBtn.addEventListener("click", async () => {
     if (!ocrImageFile) {
-      showToast("Please upload an image first.", "error");
+      showToast("Please add a label photo first.", "error");
+      return;
+    }
+    if (activeEngine === "ai") {
+      await runVisionAiScan();
+    } else {
+      await runOfflineOcrScan();
+    }
+  });
+
+  /**
+   * High-precision vision scan through Google Gemini.
+   *
+   * Flow: validate key -> discover models the key can use -> try each model
+   * (with a schema-less retry and 429/503 backoff) -> parse JSON -> fill form.
+   * Every step is written to the diagnostics log so failures are explainable.
+   */
+  async function runVisionAiScan() {
+    let key = getApiKey();
+
+    if (!key) {
+      showToast("No Gemini API key yet. Paste one above (Get a free key) or switch to Offline OCR.", "error");
+      if (geminiApiKeyInput) {
+        geminiApiKeyInput.focus();
+        geminiApiKeyInput.style.outline = "2px solid var(--danger)";
+        setTimeout(() => { if (geminiApiKeyInput) geminiApiKeyInput.style.outline = ""; }, 2600);
+      }
       return;
     }
 
-    // Check if Tesseract.js is loaded
+    if (saveApiKeyFromInput(true)) key = getApiKey();
+
+    resetDiag();
+    setScanBusy(true);
+    setKeyStatus("is-busy", "reading");
+    if (ocrConfidenceBadge) {
+      ocrConfidenceBadge.textContent = "AI reading…";
+      ocrConfidenceBadge.className = "badge badge-warning";
+    }
+    setScanProgress(8, "Preparing image…");
+    logDiag("Scan started · " + Math.round((ocrImageFile.size || 0) / 1024) + " KB · " + (ocrImageFile.type || "unknown type"));
+    logDiag("Key " + maskKey(key));
+
+    try {
+      const prepared = await prepareImageForGemini(ocrImageFile);
+      const base64Data = prepared.base64Data;
+      const mimeType = prepared.mimeType;
+      logDiag("Image ready · " + Math.round((base64Data.length * 0.75) / 1024) + " KB as " + mimeType
+        + (prepared.resized ? " (downscaled for upload)" : ""));
+
+      setScanProgress(24, "Checking which models this key can use…");
+      let models = [];
+      try {
+        models = await listVisionModels(key);
+      } catch (discoveryErr) {
+        logDiag("Model discovery failed: " + discoveryErr.message);
+        // A rejected key will fail every model too — stop with the real reason.
+        if (discoveryErr.status === 400 || discoveryErr.status === 403) throw discoveryErr;
+      }
+      if (models.length === 0) {
+        models = FALLBACK_MODELS.slice();
+        logDiag("Using built-in model list: " + models.join(", "));
+      }
+
+      const promptText = [
+        "You are a precise packaging label reader for an expiry tracker.",
+        "Read the photo and return the product details.",
+        "Rules:",
+        "- name: the product title exactly as printed, keeping strength/dosage (e.g. 'Amoxicillin 500mg', 'Whole Milk 1L').",
+        "- expiryDate: the EXPIRY / BEST BEFORE / USE BY date only, formatted YYYY-MM-DD. Never use the manufacturing or packed date (Mfg / Mfd / Pkd). If only MM/YYYY is printed, use the last day of that month. If no date is legible, return an empty string.",
+        "- category: exactly one of Dairy, Bakery, Medicine, Pantry, Poultry, Produce, Meat, Beverages, Household.",
+        "- quantity: integer number of units, default 1.",
+        "- notes: batch or lot number plus short storage advice."
+      ].join("\n");
+
+      const responseSchema = {
+        type: "OBJECT",
+        properties: {
+          name: { type: "STRING" },
+          expiryDate: { type: "STRING" },
+          category: { type: "STRING" },
+          quantity: { type: "INTEGER" },
+          notes: { type: "STRING" }
+        },
+        required: ["name", "expiryDate", "category", "quantity", "notes"]
+      };
+
+      /**
+       * Builds the request for one model.
+       * 2.5 models spend part of maxOutputTokens on internal "thinking", and
+       * the old 1024 cap was used up before the JSON arrived — the response
+       * came back empty. Thinking is also switched off where it is supported,
+       * which makes scans faster and cheaper.
+       */
+      const buildPayload = (model, withSchema) => ({
+        contents: [{
+          role: "user",
+          parts: [
+            { inlineData: { mimeType: mimeType, data: base64Data } },
+            { text: promptText }
+          ]
+        }],
+        generationConfig: Object.assign(
+          {
+            temperature: 0.1,
+            maxOutputTokens: 4096,
+            responseMimeType: "application/json"
+          },
+          withSchema ? { responseSchema: responseSchema } : {},
+          /2\.5|flash-latest/i.test(model) ? { thinkingConfig: { thinkingBudget: 0 } } : {}
+        )
+      });
+
+      setScanProgress(46, "Reading the label with Vision AI…");
+
+      let data = null;
+      let modelUsed = "";
+      let lastError = null;
+
+      for (const model of models.slice(0, 6)) {
+        let attemptPayload = buildPayload(model, true);
+        for (let attempt = 1; attempt <= 2; attempt++) {
+          try {
+            logDiag("→ " + model + " (attempt " + attempt + ")");
+            data = await requestGemini(model, key, attemptPayload);
+            modelUsed = model;
+            break;
+          } catch (err) {
+            lastError = err;
+            logDiag("   " + model + " failed — " + err.message);
+            if (err.status === 429 || err.status === 503) {
+              await sleep(900 * attempt);
+              continue;
+            }
+            if (err.status === 400 && attempt === 1) {
+              logDiag("   retrying " + model + " without a response schema…");
+              attemptPayload = buildPayload(model, false);
+              continue;
+            }
+            break;
+          }
+        }
+        if (data) break;
+      }
+
+      if (!data) {
+        throw new Error(lastError ? lastError.message : "No Gemini model accepted the request.");
+      }
+
+      setScanProgress(82, "Parsing the extracted fields…");
+
+      const rawText = readCandidateText(data);
+      logDiag("Reply from " + modelUsed + ": " + rawText.length + " chars · finish=" + (readFinishReason(data) || "n/a"));
+
+      if (!rawText) {
+        const blockReason = data.promptFeedback && data.promptFeedback.blockReason;
+        const finish = readFinishReason(data);
+        if (blockReason) throw new Error("Gemini blocked this image (" + blockReason + "). Try a clearer, unobstructed photo.");
+        if (finish === "MAX_TOKENS") throw new Error("The answer was cut off before any JSON arrived. Try a simpler, tighter photo.");
+        throw new Error("Gemini returned an empty answer. Try a sharper photo, or switch to Offline OCR.");
+      }
+
+      const parsed = parseJsonLoose(rawText);
+      if (!parsed) {
+        throw new Error("Gemini replied, but not in JSON. Open 'Raw engine output' to inspect it.");
+      }
+
+      const expiry = normalizeDate(parsed.expiryDate);
+      const allowedCategories = ["Dairy", "Bakery", "Medicine", "Pantry", "Poultry", "Produce", "Meat", "Beverages", "Household"];
+      const rawCategory = String(parsed.category || "").trim();
+      const category = allowedCategories.find(c => c.toLowerCase() === rawCategory.toLowerCase()) || "Pantry";
+      const quantity = Math.max(1, parseInt(parsed.quantity, 10) || 1);
+      const notes = String(parsed.notes || "").trim();
+
+      ocrExtractedName.value = String(parsed.name || "").trim() || "Scanned item";
+      ocrExtractedCategory.value = category;
+      ocrExtractedQuantity.value = quantity;
+      ocrExtractedDate.value = expiry;
+      ocrExtractedNotes.value = notes ? notes + " · " + modelUsed : "Read with " + modelUsed;
+      addScannedItemBtn.disabled = false;
+
+      ocrConfidenceBadge.textContent = "AI · verified";
+      ocrConfidenceBadge.className = "badge badge-safe";
+      rawOcrOutput.textContent = JSON.stringify({
+        model: modelUsed,
+        finishReason: readFinishReason(data) || null,
+        parsed: parsed
+      }, null, 2);
+
+      setScanProgress(100, "Done — check the fields and save.");
+      setKeyStatus("is-ok", "key works");
+      logDiag("SUCCESS with " + modelUsed + " · expiry " + expiry);
+      showToast("Label read with " + modelUsed + ". Confirm the fields, then save.", "success");
+
+    } catch (err) {
+      if (ocrConfidenceBadge) {
+        ocrConfidenceBadge.textContent = "Scan failed";
+        ocrConfidenceBadge.className = "badge badge-expired";
+      }
+      if (ocrStatusText) ocrStatusText.textContent = "Scan failed — see diagnostics below";
+      if (ocrPercent) ocrPercent.textContent = "—";
+      if (ocrProgressBar) ocrProgressBar.style.width = "0%";
+      if (aiDiagnostics) {
+        logDiag("FAILED: " + err.message);
+        const details = aiDiagnostics.closest("details");
+        if (details) details.open = true;
+      }
+      if (rawOcrOutput) rawOcrOutput.textContent = "Vision AI error:\n" + err.message;
+      console.error("Vision AI error:", err);
+      showToast(err.message, "error");
+    } finally {
+      setScanBusy(false);
+    }
+  }
+
+  /**
+   * Offline OCR Scan via Tesseract.js with enhanced regex and dot-matrix heuristics.
+   */
+  async function runOfflineOcrScan() {
     if (typeof Tesseract === "undefined") {
-      showToast("OCR engine loading failed. Please check internet connection.", "error");
+      showToast("Offline OCR library loading failed. Check your internet connection.", "error");
       return;
     }
 
     laserScanner.classList.remove("hidden");
     ocrProgressCard.classList.remove("hidden");
     runScanBtn.disabled = true;
-    ocrConfidenceBadge.textContent = "Deciphering...";
+    ocrConfidenceBadge.textContent = "Deciphering (Offline)...";
     ocrConfidenceBadge.className = "badge badge-warning";
 
     try {
@@ -728,7 +1413,7 @@ document.addEventListener("DOMContentLoaded", () => {
       ocrConfidenceBadge.textContent = "Scan failed";
       ocrConfidenceBadge.className = "badge badge-expired";
     }
-  });
+  }
 
   /**
    * Intelligently parses product name, expiry date, and category from raw OCR text.
@@ -739,10 +1424,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const lines = text.split("\n").map(l => l.trim()).filter(l => l.length > 1);
 
-    // 1. EXTRACT EXPIRY DATE
+    // 1. EXTRACT EXPIRY DATE WITH DOT-MATRIX CORRECTIONS
     let detectedDate = extractExpiryDateFromText(text);
     if (!detectedDate) {
-      // Default fallback: 1 month from now or today
       detectedDate = todayIso;
     }
     ocrExtractedDate.value = detectedDate;
@@ -756,57 +1440,84 @@ document.addEventListener("DOMContentLoaded", () => {
     ocrExtractedCategory.value = detectedCategory;
 
     ocrExtractedQuantity.value = 1;
-    ocrExtractedNotes.value = `Scanned via OCR (${Math.round(confidence)}% match)`;
+    ocrExtractedNotes.value = `Scanned via Offline OCR (${Math.round(confidence)}% match)`;
     addScannedItemBtn.disabled = false;
 
     showToast("Characters deciphered! Check the details and record.", "success");
   }
 
   /**
-   * Searches OCR text for expiry patterns.
+   * Enhanced Expiry Date Search with Packaging Line Heuristics and Dot-Matrix Correction.
    */
   function extractExpiryDateFromText(text) {
-    // Common date patterns
-    // YYYY-MM-DD or YYYY/MM/DD
-    const isoRegex = /\b(20\d{2})[-/.](0[1-9]|1[0-2])[-/.](0[1-9]|[12]\d|3[01])\b/;
-    let m = text.match(isoRegex);
-    if (m) {
-      return `${m[1]}-${m[2]}-${m[3]}`;
-    }
+    if (!text) return null;
+    const lines = text.split("\n").map(l => l.trim()).filter(l => l.length > 0);
 
-    // DD/MM/YYYY or DD-MM-YYYY or DD.MM.YYYY
-    const dmyRegex = /\b(0[1-9]|[12]\d|3[01])[-/.](0[1-9]|1[0-2])[-/.](20\d{2})\b/;
-    m = text.match(dmyRegex);
-    if (m) {
-      return `${m[3]}-${m[2]}-${m[1]}`;
-    }
+    const expiryKeywords = /exp|expiry|best before|use by|bb|validity|val/i;
+    const mfgKeywords = /mfg|mfd|pkd|packed|batch/i;
 
-    // DD/MM/YY
-    const dmyShortRegex = /\b(0[1-9]|[12]\d|3[01])[-/.](0[1-9]|1[0-2])[-/.](2[4-9]|3[0-9])\b/;
-    m = text.match(dmyShortRegex);
-    if (m) {
-      return `20${m[3]}-${m[2]}-${m[1]}`;
-    }
+    // Prioritize lines with explicit expiry cues over general lines
+    const targetLines = lines.filter(l => expiryKeywords.test(l) && !mfgKeywords.test(l));
+    const candidateLines = targetLines.length > 0 ? targetLines : lines.filter(l => !mfgKeywords.test(l));
 
-    // MM/YYYY (e.g. 10/2026) -> convert to end of month
-    const myRegex = /\b(0[1-9]|1[0-2])[-/.](20\d{2})\b/;
-    m = text.match(myRegex);
-    if (m) {
-      return `${m[2]}-${m[1]}-28`;
-    }
+    for (const line of (candidateLines.length > 0 ? candidateLines : lines)) {
+      // 1. DD/MM/YYYY or DD-MM-YYYY or DD.MM.YYYY
+      const dmyRegex = /\b(0[1-9]|[12]\d|3[01])[-/.](0[1-9]|1[0-2])[-/.](20\d{2})\b/;
+      let m = line.match(dmyRegex);
+      if (m) {
+        let year = m[3];
+        // Dot-matrix correction: if OCR read 205x (e.g. 2054 instead of 2024), correct to 202x
+        if (year.startsWith("205") && parseInt(year, 10) > 2040) {
+          year = "202" + year.substring(3);
+        }
+        return `${year}-${m[2]}-${m[1]}`;
+      }
 
-    // English month words: e.g. 15 Oct 2026, EXP 22 DEC 2026
-    const months = {
-      jan: "01", feb: "02", mar: "03", apr: "04", may: "05", jun: "06",
-      jul: "07", aug: "08", sep: "09", oct: "10", nov: "11", dec: "12"
-    };
-    const wordDateRegex = /\b(0[1-9]|[12]\d|3[01])\s*(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s*(20\d{2}|2[4-9])\b/i;
-    m = text.match(wordDateRegex);
-    if (m) {
-      const d = m[1];
-      const mon = months[m[2].toLowerCase().substring(0, 3)];
-      const y = m[3].length === 2 ? `20${m[3]}` : m[3];
-      return `${y}-${mon}-${d}`;
+      // 2. YYYY-MM-DD or YYYY/MM/DD
+      const isoRegex = /\b(20\d{2})[-/.](0[1-9]|1[0-2])[-/.](0[1-9]|[12]\d|3[01])\b/;
+      m = line.match(isoRegex);
+      if (m) {
+        let year = m[1];
+        if (year.startsWith("205") && parseInt(year, 10) > 2040) {
+          year = "202" + year.substring(3);
+        }
+        return `${year}-${m[2]}-${m[3]}`;
+      }
+
+      // 3. DD/MM/YY
+      const dmyShortRegex = /\b(0[1-9]|[12]\d|3[01])[-/.](0[1-9]|1[0-2])[-/.](2[4-9]|3[0-9])\b/;
+      m = line.match(dmyShortRegex);
+      if (m) {
+        return `20${m[3]}-${m[2]}-${m[1]}`;
+      }
+
+      // 4. MM/YYYY (e.g. 05/2024)
+      const myRegex = /\b(0[1-9]|1[0-2])[-/.](20\d{2})\b/;
+      m = line.match(myRegex);
+      if (m) {
+        let year = m[2];
+        if (year.startsWith("205") && parseInt(year, 10) > 2040) {
+          year = "202" + year.substring(3);
+        }
+        return `${year}-${m[1]}-28`;
+      }
+
+      // 5. English month words (e.g. 15 Oct 2026, EXP MAY 2024)
+      const months = {
+        jan: "01", feb: "02", mar: "03", apr: "04", may: "05", jun: "06",
+        jul: "07", aug: "08", sep: "09", oct: "10", nov: "11", dec: "12"
+      };
+      const wordDateRegex = /\b(0[1-9]|[12]\d|3[01])\s*(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s*(20\d{2}|2[4-9])\b/i;
+      m = line.match(wordDateRegex);
+      if (m) {
+        const d = m[1];
+        const mon = months[m[2].toLowerCase().substring(0, 3)];
+        let y = m[3].length === 2 ? `20${m[3]}` : m[3];
+        if (y.startsWith("205") && parseInt(y, 10) > 2040) {
+          y = "202" + y.substring(3);
+        }
+        return `${y}-${mon}-${d}`;
+      }
     }
 
     return null;
@@ -819,16 +1530,15 @@ document.addEventListener("DOMContentLoaded", () => {
     const ignoreList = [
       "ingredients", "nutrition", "calories", "protein", "fat", "net wt", "best before",
       "expiry", "exp date", "mfg", "batch", "keep refrigerated", "store in", "contains",
-      "barcode", "manufactured", "marketed by", "fssai", "usda", "gmo"
+      "barcode", "manufactured", "marketed by", "fssai", "usda", "gmo", "alamy", "shutterstock"
     ];
 
     for (const line of lines) {
       const lower = line.toLowerCase();
       const hasIgnored = ignoreList.some(k => lower.includes(k));
-      // Good line has letters, isn't mostly digits, and isn't boilerplate
       const letters = (line.match(/[a-zA-Z]/g) || []).length;
-      if (!hasIgnored && letters >= 4 && line.length < 50) {
-        // Clean line
+      // Skip lines that are mostly garbage or watermarks
+      if (!hasIgnored && letters >= 4 && line.length < 50 && !/^v\d\s+cat/i.test(lower)) {
         return line.replace(/[^\w\s-&]/g, "").trim();
       }
     }

@@ -1,42 +1,85 @@
 package service;
 
 import model.Item;
-import storage.CsvStorage;
+import storage.ItemRepository;
+import storage.SampleData;
+import storage.SnapshotStorage;
 
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
+import java.util.logging.Logger;
 
 /**
  * Service managing inventory business logic.
- * 
+ *
  * Responsibilities:
  * - Adding, deleting, searching, and listing items.
  * - Generating unique sequential IDs.
  * - Coordinating with CsvStorage to persist changes automatically.
+ * - Keeping a serializable backup via SnapshotStorage.
  * - Providing alert queries via ExpiryService.
  */
 public class ItemService {
 
+    private static final Logger LOGGER = Logger.getLogger(ItemService.class.getName());
+
     private final List<Item> items;
-    private final CsvStorage storage;
+    private final ItemRepository storage;
     private final ExpiryService expiryService;
+    private final SnapshotStorage snapshotStorage;
     private int nextId;
 
     /**
-     * Initializes the service with storage and expiry services,
-     * loading either existing CSV data or initial sample items.
+     * Convenience constructor: uses the default CSV file and default snapshot file.
      *
-     * @param storage       The CSV persistence handler
+     * @param storage       The inventory repository (CSV or JDBC)
      * @param expiryService The expiry status and alert calculation handler
      */
-    public ItemService(CsvStorage storage, ExpiryService expiryService) {
+    public ItemService(ItemRepository storage, ExpiryService expiryService) {
+        this(storage, expiryService, new SnapshotStorage());
+    }
+
+    /**
+     * Full constructor (constructor overloading) allowing a custom snapshot location.
+     *
+     * <p>Loading order: CSV first, then the serializable snapshot when the CSV
+     * holds no records. A snapshot-only restore rewrites the CSV so both stores agree.</p>
+     *
+     * @param storage         The inventory repository (CSV or JDBC)
+     * @param expiryService   The expiry status and alert calculation handler
+     * @param snapshotStorage The serializable backup handler
+     */
+    public ItemService(ItemRepository storage, ExpiryService expiryService, SnapshotStorage snapshotStorage) {
         this.storage = storage;
         this.expiryService = expiryService;
-        this.items = new ArrayList<>(storage.loadOrCreateInitialData());
+        this.snapshotStorage = snapshotStorage;
+
+        List<Item> loaded;
+        if (storage.hasExistingData()) {
+            // The primary store (CSV or JDBC) always wins when it has rows.
+            loaded = storage.loadItems();
+        } else {
+            // No CSV rows: fall back to the serializable snapshot before seeding samples.
+            List<Item> restored = snapshotStorage.loadSnapshot();
+            if (!restored.isEmpty()) {
+                loaded = restored;
+                storage.saveItems(loaded);
+                LOGGER.info("CSV was empty; restored " + loaded.size()
+                        + " item(s) from the serializable snapshot");
+            } else {
+                loaded = SampleData.createSampleItems();
+                storage.saveItems(loaded);
+                LOGGER.info("No CSV data or snapshot found; created " + loaded.size()
+                        + " starter item(s)");
+            }
+        }
+
+        this.items = new ArrayList<>(loaded);
         this.nextId = calculateNextId();
+        LOGGER.info("Inventory ready with " + items.size() + " item(s); next ID is " + nextId);
     }
 
     /**
@@ -65,7 +108,8 @@ public class ItemService {
     public Item addItem(String name, String category, int quantity, LocalDate expiryDate, String notes) {
         Item newItem = new Item(nextId++, name, category, quantity, expiryDate, notes);
         items.add(newItem);
-        storage.saveItems(items);
+        persist();
+        LOGGER.info("Added " + newItem.getSummary() + " (ID " + newItem.getId() + ")");
         return newItem;
     }
 
@@ -112,6 +156,7 @@ public class ItemService {
                 matches.add(item);
             }
         }
+        LOGGER.fine(() -> "Search '" + lowerQuery + "' matched " + matches.size() + " item(s)");
         return matches;
     }
 
@@ -124,9 +169,25 @@ public class ItemService {
     public boolean deleteItem(int id) {
         boolean removed = items.removeIf(item -> item.getId() == id);
         if (removed) {
-            storage.saveItems(items);
+            persist();
+            LOGGER.info("Deleted item with ID " + id);
+        } else {
+            LOGGER.warning("Delete requested for unknown item ID " + id);
         }
         return removed;
+    }
+
+    /**
+     * Writes the current inventory to the active backend and then to the
+     * serializable snapshot. A backend failure is logged but does not stop the
+     * snapshot from being written, so the backup still holds the latest state.
+     */
+    private void persist() {
+        boolean saved = storage.saveItems(items);
+        if (!saved) {
+            LOGGER.warning("Primary storage save failed; the snapshot backup still holds the latest inventory");
+        }
+        snapshotStorage.saveSnapshot(items);
     }
 
     /**

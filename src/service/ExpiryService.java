@@ -8,6 +8,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.logging.Logger;
 
 /**
  * Service responsible for calculating expiry statuses and alerts.
@@ -18,6 +19,8 @@ import java.util.List;
  * - Safe: Expiry date is more than 7 days in the future.
  */
 public class ExpiryService {
+
+    private static final Logger LOGGER = Logger.getLogger(ExpiryService.class.getName());
 
     /**
      * Calculates the ExpiryStatus for a given item against a reference date.
@@ -103,6 +106,8 @@ public class ExpiryService {
 
         // Sort urgent items by earliest expiry date first
         alertItems.sort(Comparator.comparing(Item::getExpiryDate));
+        LOGGER.fine(() -> "Evaluated " + items.size() + " item(s): " + alertItems.size()
+                + " need attention");
         return alertItems;
     }
 }
