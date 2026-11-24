@@ -48,8 +48,11 @@ final class OverviewView {
                 metric("Expired", expired, "Past expiry date", "rose"));
         if (expired > 0 && !reduced) Motion.scale(metrics.getChildren().get(3), 1.015, 1);
         VBox value = card("Recorded inventory value", label(value(items), "metric"));
+        value.getStyleClass().add("value-widget");
         VBox actions = card("Quick actions", new FlowPane(8, 8,
-                button("Add product", add, "primary"), button("Scan a label", scan), button("Review expiries", tracker)));
+                launchTile("Add product", add, "M7 1H11V7H17V11H11V17H7V11H1V7H7Z", "mint"),
+                launchTile("Scan a label", scan, "M1 1H6V3H3V6H1ZM12 1H17V6H15V3H12ZM1 12H3V15H6V17H1ZM15 12H17V17H12V15H15ZM2 8H16V10H2Z", "lilac"),
+                launchTile("Review expiries", tracker, "M9 1A8 8 0 1 0 9 17A8 8 0 0 0 9 1ZM8 4H10V8L13 10L12 12L8 9Z", "peach")));
         List<Item> upcoming = items.stream().filter(i -> !i.getExpiryDate().isBefore(today))
                 .sorted(Comparator.comparing(Item::getExpiryDate)).limit(5).toList();
         VBox due = card("Upcoming expiries");
@@ -62,7 +65,7 @@ final class OverviewView {
         VBox recent = card("Recent activity");
         if (activity.isEmpty()) recent.getChildren().add(label("Changes made in this session appear here.", "muted"));
         activity.forEach(entry -> recent.getChildren().add(label(entry, "muted")));
-        return new VBox(15, metrics, tiles(value, actions),
+        return new VBox(13, tiles(actions, value), metrics,
                 tiles(card("Category distribution", categories()), card("Inventory health", health())),
                 tiles(due, recent));
     }
@@ -79,10 +82,19 @@ final class OverviewView {
                         label("Dates from current inventory records", "muted"))));
     }
 
+    private Node launchTile(String name, Runnable action, String path, String color) {
+        var tile = button(name, action, "launch-tile", color);
+        tile.setGraphic(icon(path));
+        tile.setContentDisplay(javafx.scene.control.ContentDisplay.TOP);
+        return tile;
+    }
+
     private VBox metric(String title, int target, String caption, String color) {
         Label number = label("", "metric");
         Motion.count(number, target, reduced);
-        return card("", badge(title, color), number, label(caption, "muted", "metric-caption"));
+        VBox widget = card("", label(title, "metric-label"), number, label(caption, "muted", "metric-caption"));
+        widget.getStyleClass().addAll("metric-widget", color);
+        return widget;
     }
 
     private GridPane tiles(Node... nodes) {

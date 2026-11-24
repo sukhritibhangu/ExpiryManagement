@@ -128,7 +128,9 @@ public class LedgerApp extends Application {
         sidebar.getChildren().add(row(logo, brand));
         for (Page item : Page.values()) {
             Button button = button(item.title, () -> navigate(item));
-            button.setGraphic(icon(item.icon));
+            StackPane glyph = new StackPane(icon(item.icon));
+            glyph.getStyleClass().addAll("nav-glyph", "glyph-" + item.name().toLowerCase(Locale.ROOT));
+            button.setGraphic(glyph);
             button.setMaxWidth(Double.MAX_VALUE);
             tip(button, item.title);
             navigation.put(item, button);
