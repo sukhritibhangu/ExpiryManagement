@@ -69,26 +69,16 @@ For a packaged host release, build on the target platform or set -Dledger.releas
 mvn -B -Pjpro -DskipTests jpro:release
 ```
 
-## Deploy on Render
+## Deploy the free Render demo
 
-JPro lists development and educational use as free. Students and teachers can request a licence with an educational email address. Confirm that the issued licence covers the intended public deployment before publishing. Render requires a paid instance for a persistent disk. [JPro pricing](https://www.jpro.one/pricing) · [Render persistent disks](https://render.com/docs/disks)
+[Open the Render deployment setup](https://render.com/deploy?repo=https%3A%2F%2Fgithub.com%2Fsukhritibhangu%2FExpiryManagement%2Ftree%2Fcodex%2Fjavafx-ledger-upgrade)
 
-For a container check on a Linux Docker host:
+Sign in to Render and review the Blueprint. It defines one Free Docker web service, with no disk or database add-on. Once the service is live, open the onrender.com URL shown on its dashboard. [Render free tier](https://render.com/docs/free)
 
-```bash
-docker build -t expiry-alert-ledger .
-docker volume create ledger-data
-docker run --rm -p 8080:8080 -e PORT=8080 -v ledger-data:/var/data expiry-alert-ledger
-```
+The browser demo uses temporary H2 workspaces. Inventory and keys created in the demo reset when Render restarts, redeploys or spins down the service. The original desktop data stays on your computer. Render may take about a minute to wake the demo after inactivity.
 
-After licensing and the Docker check:
+JPro lists educational use as free for eligible students and teachers who apply. Confirm the issued licence covers the public demo before publishing. Windows Application Control blocked local JPro startup, so verify the browser workflow on Render after deployment. [JPro pricing](https://www.jpro.one/pricing)
 
-1. Push the upgrade branch to a private GitHub repository. Keep runtime inventories and keys out of the repository.
-2. In Render choose **New → Blueprint**, connect the repository and select the upgrade branch. The root render.yaml sets up a Docker web service, one instance, a 1 GB disk and a JPro health check.
-3. Deploy. Render supplies PORT and terminates HTTPS for the public URL. Keep TLS enabled for workspace keys. Set LEDGER_BROWSER_DATA to the directory on the mounted disk.
-4. Create two temporary workspaces through the assigned URL. Verify each sees only its own records, upload a sample label, export a report and restart the service to verify disk persistence.
-
-Windows Application Control blocked the patched JavaFX font DLL on the verification machine. The JPro release built, but the local browser workflow and Docker runtime remain unverified. The Docker and Render configurations are supplied for validation on the hosting platform. This project has no deployed public URL. [Render Docker deployments](https://render.com/docs/docker) · [Render WebSockets](https://render.com/docs/websocket)
 
 ## Architecture and Java concepts
 
