@@ -3,6 +3,7 @@ package storage;
 import model.Item;
 
 import java.sql.Connection;
+import java.time.LocalDate;
 import java.sql.Date;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
@@ -86,34 +87,35 @@ public class JdbcStorage implements ItemRepository {
         try (Connection connection = connect();
              Statement statement = connection.createStatement()) {
             statement.executeUpdate(CREATE_TABLE_SQL);
-            LOGGER.info("JDBC storage ready at " + url);
+            statement.executeUpdate("ALTER TABLE items ADD COLUMN IF NOT EXISTS manufactured DATE");
+            statement.executeUpdate("ALTER TABLE items ADD COLUMN IF NOT EXISTS price DECIMAL(14,2)");
+            statement.executeUpdate("ALTER TABLE items ADD COLUMN IF NOT EXISTS batch VARCHAR(100)");
+            statement.executeUpdate("CREATE TABLE IF NOT EXISTS ledger_initialized (id INT PRIMARY KEY)");
         } catch (SQLException e) {
-            throw new IllegalStateException("Could not initialise JDBC storage at " + url
-                    + ": " + e.getMessage(), e);
+            throw new IllegalStateException("Could not initialise JDBC storage.", e);
         }
     }
 
     @Override
     public String describe() {
-        return "JDBC (H2) - " + url;
+        return "JDBC (H2)";
     }
 
     @Override
     public boolean hasExistingData() {
         try (Connection connection = connect();
              Statement statement = connection.createStatement();
-             ResultSet rs = statement.executeQuery("SELECT COUNT(*) FROM items")) {
+             ResultSet rs = statement.executeQuery("SELECT (SELECT COUNT(*) FROM items) + (SELECT COUNT(*) FROM ledger_initialized)")) {
             return rs.next() && rs.getInt(1) > 0;
         } catch (SQLException e) {
-            LOGGER.log(Level.WARNING, "Could not count rows in " + url, e);
-            return false;
+            throw new IllegalStateException("Could not check database contents.", e);
         }
     }
 
     @Override
     public List<Item> loadItems() {
         List<Item> items = new ArrayList<>();
-        String sql = "SELECT id, name, category, quantity, expiry_date, notes FROM items ORDER BY id";
+        String sql = "SELECT id, name, category, quantity, expiry_date, notes, manufactured, price, batch FROM items ORDER BY id";
 
         try (Connection connection = connect();
              Statement statement = connection.createStatement();
@@ -126,20 +128,21 @@ public class JdbcStorage implements ItemRepository {
                         rs.getString("category"),
                         rs.getInt("quantity"),
                         rs.getDate("expiry_date").toLocalDate(),
-                        rs.getString("notes") == null ? "" : rs.getString("notes"));
+                        rs.getString("notes"), rs.getObject("manufactured", LocalDate.class),
+                        rs.getBigDecimal("price"), rs.getString("batch"));
                 items.add(item);
             }
-            LOGGER.fine(() -> "Loaded " + items.size() + " row(s) from " + url);
+            LOGGER.fine(() -> "Loaded " + items.size() + " database row(s)");
         } catch (SQLException e) {
-            LOGGER.log(Level.SEVERE, "Failed to read items from " + url, e);
+            throw new IllegalStateException("Could not read database inventory.", e);
         }
         return items;
     }
 
     @Override
     public boolean saveItems(List<Item> items) {
-        String insertSql = "INSERT INTO items (id, name, category, quantity, expiry_date, notes) "
-                + "VALUES (?, ?, ?, ?, ?, ?)";
+        String insertSql = "INSERT INTO items (id, name, category, quantity, expiry_date, notes, manufactured, price, batch) "
+                + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
         try (Connection connection = connect()) {
             connection.setAutoCommit(false);
@@ -155,22 +158,27 @@ public class JdbcStorage implements ItemRepository {
                     insert.setInt(4, item.getQuantity());
                     insert.setDate(5, Date.valueOf(item.getExpiryDate()));
                     insert.setString(6, item.getNotes());
+                    insert.setObject(7, item.getManufactured(), java.sql.Types.DATE);
+                    insert.setBigDecimal(8, item.getPrice());
+                    insert.setString(9, item.getBatch());
                     insert.addBatch();
                 }
                 insert.executeBatch();
+                clear.executeUpdate("MERGE INTO ledger_initialized KEY(id) VALUES (1)");
                 connection.commit();
-                LOGGER.fine(() -> "Saved " + items.size() + " row(s) to " + url);
+                LOGGER.fine(() -> "Saved " + items.size() + " database row(s)");
                 return true;
             } catch (SQLException e) {
                 connection.rollback();
-                LOGGER.log(Level.SEVERE, "Failed to save items to " + url + " (transaction rolled back)", e);
+                LOGGER.log(Level.SEVERE, "Database save failed and was rolled back", e);
                 return false;
             } finally {
                 connection.setAutoCommit(true);
             }
         } catch (SQLException e) {
-            LOGGER.log(Level.SEVERE, "Could not open JDBC connection to " + url, e);
+            LOGGER.log(Level.SEVERE, "JDBC connection failed", e);
             return false;
         }
     }
 }
+

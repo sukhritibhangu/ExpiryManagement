@@ -46,7 +46,8 @@ public final class StorageFactory {
 
         if (choice.equals("jdbc") || choice.equals("h2") || choice.equals("sql")) {
             String url = (dbUrl == null || dbUrl.isBlank()) ? DEFAULT_DB_URL : dbUrl.trim();
-            JdbcStorage jdbc = new JdbcStorage(url);
+            JdbcStorage jdbc = new JdbcStorage(url, System.getenv("LEDGER_DB_USER"),
+                    System.getenv("LEDGER_DB_PASSWORD"));
             LOGGER.info("Storage backend: " + jdbc.describe());
             return jdbc;
         }
@@ -63,3 +64,4 @@ public final class StorageFactory {
         return (value == null || value.isBlank()) ? fallback : value;
     }
 }
+

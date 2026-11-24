@@ -1,6 +1,7 @@
 package model;
 
 import java.time.LocalDate;
+import java.math.BigDecimal;
 import java.util.Objects;
 
 /**
@@ -20,6 +21,32 @@ public class Item extends InventoryEntry implements Expirable {
 
     private int quantity;
     private LocalDate expiryDate;
+    private LocalDate manufactured;
+    private BigDecimal price;
+    private String batch;
+
+    public Item(int id, String name, String category, int quantity, LocalDate expiryDate, String notes,
+                LocalDate manufactured, BigDecimal price, String batch) {
+        this(id, name, category, quantity, expiryDate, notes);
+        if (manufactured != null && manufactured.isAfter(expiryDate)) {
+            throw new IllegalArgumentException("Manufacturing date must be on or before expiry.");
+        }
+        if (price != null && (price.signum() < 0 || price.scale() > 2
+                || price.compareTo(new BigDecimal("999999999999.99")) > 0)) {
+            throw new IllegalArgumentException("Enter a non-negative unit price with up to two decimal places.");
+        }
+        this.manufactured = manufactured;
+        this.price = price;
+        this.batch = batch == null ? "" : batch.strip();
+    }
+
+    public LocalDate getManufactured() { return manufactured; }
+    public BigDecimal getPrice() { return price; }
+    public String getBatch() { return batch == null ? "" : batch; }
+
+    public BigDecimal inventoryValue() {
+        return price == null ? BigDecimal.ZERO : price.multiply(BigDecimal.valueOf(quantity));
+    }
 
     /**
      * Constructs a new Item with all required and optional attributes.
@@ -90,3 +117,4 @@ public class Item extends InventoryEntry implements Expirable {
                 '}';
     }
 }
+
