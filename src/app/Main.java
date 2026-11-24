@@ -4,7 +4,8 @@ import model.ExpiryStatus;
 import model.Item;
 import service.ExpiryService;
 import service.ItemService;
-import storage.CsvStorage;
+import storage.StorageFactory;
+import util.AppLogging;
 
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
@@ -28,11 +29,12 @@ public class Main {
 
     public Main() {
         this.expiryService = new ExpiryService();
-        this.itemService = new ItemService(new CsvStorage(), expiryService);
+        this.itemService = new ItemService(StorageFactory.create(), expiryService);
         this.scanner = new Scanner(System.in);
     }
 
     public static void main(String[] args) {
+        AppLogging.configure();
         Main app = new Main();
         app.run();
     }

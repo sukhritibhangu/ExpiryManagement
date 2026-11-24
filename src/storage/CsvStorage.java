@@ -2,261 +2,157 @@ package storage;
 
 import model.Item;
 
-import java.io.BufferedReader;
-import java.io.BufferedWriter;
-import java.io.File;
-import java.io.FileReader;
-import java.io.FileWriter;
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.time.LocalDate;
-import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
-/**
- * Handles persistent storage of inventory items to and from a local CSV file.
- * 
- * Features:
- * - Reads and writes standard CSV format.
- * - Safely handles quotes and commas inside text fields.
- * - Auto-creates storage directory if missing.
- * - Generates beginner-friendly sample items when no data file exists.
- */
-public class CsvStorage {
+public class CsvStorage implements ItemRepository {
+    private static final Logger LOGGER = Logger.getLogger(CsvStorage.class.getName());
+    private static final String HEADER =
+            "ID,Name,Category,Quantity,ExpiryDate,Notes,ManufacturingDate,UnitPrice,Batch";
+    private final Path path;
 
-    private final String filePath;
-    private static final String CSV_HEADER = "ID,Name,Category,Quantity,ExpiryDate,Notes";
+    public CsvStorage() { this("data/inventory.csv"); }
 
-    /**
-     * Default constructor pointing to "data/inventory.csv".
-     */
-    public CsvStorage() {
-        this("data/inventory.csv");
-    }
-
-    /**
-     * Constructor allowing custom file path (useful for testing or flexible location).
-     *
-     * @param filePath Path to the CSV file
-     */
     public CsvStorage(String filePath) {
-        this.filePath = filePath;
+        path = Path.of(filePath);
     }
 
-    public String getFilePath() {
-        return filePath;
-    }
+    public String getFilePath() { return path.toString(); }
 
-    /**
-     * Checks if the CSV file exists and has saved records beyond just a header.
-     *
-     * @return true if valid saved data exists, false otherwise
-     */
-    public boolean hasExistingData() {
-        File file = new File(filePath);
-        if (!file.exists() || file.length() == 0) {
-            return false;
-        }
+    @Override public String describe() { return "CSV file - " + path; }
 
-        try (BufferedReader reader = new BufferedReader(new FileReader(file))) {
-            String line = reader.readLine(); // Header
-            while ((line = reader.readLine()) != null) {
-                if (!line.trim().isEmpty()) {
-                    return true; // Found at least one data row
-                }
-            }
-        } catch (IOException e) {
-            return false;
-        }
-        return false;
-    }
+    @Override public boolean hasExistingData() { return !Files.notExists(path); }
 
-    /**
-     * Loads items from the CSV file. If no file or records exist,
-     * initializes and saves a curated set of sample items.
-     *
-     * @return List of loaded or newly initialized Item objects
-     */
     public List<Item> loadOrCreateInitialData() {
-        if (!hasExistingData()) {
-            List<Item> sampleItems = createSampleItems();
-            saveItems(sampleItems);
-            return sampleItems;
-        }
-        return loadItems();
-    }
-
-    /**
-     * Loads all items from the CSV file.
-     *
-     * @return List of parsed Item objects
-     */
-    public List<Item> loadItems() {
-        List<Item> items = new ArrayList<>();
-        File file = new File(filePath);
-
-        if (!file.exists()) {
-            return items;
-        }
-
-        try (BufferedReader reader = new BufferedReader(new FileReader(file))) {
-            String line = reader.readLine(); // Read header line
-            int lineNumber = 1;
-
-            while ((line = reader.readLine()) != null) {
-                lineNumber++;
-                if (line.trim().isEmpty()) {
-                    continue;
-                }
-
-                try {
-                    Item item = parseCsvLine(line);
-                    if (item != null) {
-                        items.add(item);
-                    }
-                } catch (Exception e) {
-                    System.err.println("[Warning] Skipping corrupt row at line " + lineNumber + ": " + e.getMessage());
-                }
-            }
-        } catch (IOException e) {
-            System.err.println("[Error] Failed to read CSV file: " + e.getMessage());
-        }
-
-        return items;
-    }
-
-    /**
-     * Saves the provided list of items to the CSV file.
-     * Overwrites existing content to ensure persistent state matches in-memory state.
-     *
-     * @param items List of items to save
-     * @return true if successful, false otherwise
-     */
-    public boolean saveItems(List<Item> items) {
-        try {
-            Path path = Paths.get(filePath);
-            if (path.getParent() != null) {
-                Files.createDirectories(path.getParent());
-            }
-
-            try (BufferedWriter writer = new BufferedWriter(new FileWriter(filePath, false))) {
-                writer.write(CSV_HEADER);
-                writer.newLine();
-
-                for (Item item : items) {
-                    writer.write(formatItemToCsv(item));
-                    writer.newLine();
-                }
-            }
-            return true;
-        } catch (IOException e) {
-            System.err.println("[Error] Failed to save items to CSV: " + e.getMessage());
-            return false;
-        }
-    }
-
-    /**
-     * Creates default realistic sample items for initial onboarding.
-     */
-    public List<Item> createSampleItems() {
-        LocalDate today = LocalDate.now();
-        List<Item> samples = new ArrayList<>();
-
-        // 1. Expired item (demonstrates EXPIRED alert)
-        samples.add(new Item(1, "Whole Wheat Bread", "Bakery", 1, today.minusDays(2), "Check for mold before discarding"));
-        
-        // 2. Expiring soon item (in 2 days)
-        samples.add(new Item(2, "Fresh Milk (1L)", "Dairy", 2, today.plusDays(2), "Store on middle refrigerator shelf"));
-        
-        // 3. Expiring soon item (in 5 days)
-        samples.add(new Item(3, "Greek Yogurt (4-pack)", "Dairy", 1, today.plusDays(5), "Berry flavor"));
-
-        // 4. Expiring soon item (in 6 days)
-        samples.add(new Item(4, "Farm Fresh Eggs", "Poultry", 12, today.plusDays(6), "Grade A free-range"));
-
-        // 5. Safe item (in 6 months)
-        samples.add(new Item(5, "Paracetamol 500mg", "Medicine", 20, today.plusMonths(6), "First-aid kit medicine box"));
-
-        // 6. Safe item (in 1 year)
-        samples.add(new Item(6, "Extra Virgin Olive Oil", "Pantry", 1, today.plusYears(1), "Dark bottle in dry pantry"));
-
+        if (hasExistingData()) return loadItems();
+        List<Item> samples = createSampleItems();
+        if (!saveItems(samples)) throw new IllegalStateException("Could not initialize inventory CSV.");
         return samples;
     }
 
-    /**
-     * Formats an Item into a single CSV row, escaping commas and double-quotes if necessary.
-     */
-    private String formatItemToCsv(Item item) {
-        return escapeCsvField(String.valueOf(item.getId())) + "," +
-               escapeCsvField(item.getName()) + "," +
-               escapeCsvField(item.getCategory()) + "," +
-               item.getQuantity() + "," +
-               item.getExpiryDate() + "," +
-               escapeCsvField(item.getNotes());
-    }
-
-    /**
-     * Parses a single CSV line into an Item object, respecting quoted values.
-     */
-    private Item parseCsvLine(String line) {
-        List<String> tokens = splitCsvLine(line);
-        if (tokens.size() < 5) {
-            throw new IllegalArgumentException("Expected at least 5 fields, got " + tokens.size());
-        }
-
-        int id = Integer.parseInt(tokens.get(0).trim());
-        String name = tokens.get(1).trim();
-        String category = tokens.get(2).trim();
-        int quantity = Integer.parseInt(tokens.get(3).trim());
-        LocalDate expiryDate = LocalDate.parse(tokens.get(4).trim());
-        String notes = tokens.size() > 5 ? tokens.get(5).trim() : "";
-
-        return new Item(id, name, category, quantity, expiryDate, notes);
-    }
-
-    /**
-     * Splits a CSV line into fields, handling quotes and commas properly.
-     */
-    private List<String> splitCsvLine(String line) {
-        List<String> fields = new ArrayList<>();
-        StringBuilder sb = new StringBuilder();
-        boolean inQuotes = false;
-
-        for (int i = 0; i < line.length(); i++) {
-            char c = line.charAt(i);
-
-            if (c == '\"') {
-                if (inQuotes && i + 1 < line.length() && line.charAt(i + 1) == '\"') {
-                    // Escaped quote: "" -> "
-                    sb.append('\"');
-                    i++;
-                } else {
-                    inQuotes = !inQuotes;
+    @Override public List<Item> loadItems() {
+        List<Item> items = new ArrayList<>();
+        if (!hasExistingData()) return items;
+        int line = 1;
+        try (var reader = Files.newBufferedReader(path)) {
+            reader.readLine();
+            StringBuilder record = new StringBuilder();
+            boolean quoted = false;
+            String segment;
+            while ((segment = reader.readLine()) != null) {
+                line++;
+                if (!quoted && segment.isBlank()) continue;
+                if (quoted) record.append('\n');
+                record.append(segment);
+                if ((segment.chars().filter(c -> c == '"').count() & 1) != 0) quoted = !quoted;
+                if (!quoted) {
+                    items.add(parse(record.toString()));
+                    record.setLength(0);
                 }
-            } else if (c == ',' && !inQuotes) {
-                fields.add(sb.toString());
-                sb.setLength(0);
-            } else {
-                sb.append(c);
+            }
+            if (quoted) throw new IllegalArgumentException("Unclosed quoted field");
+            return items;
+        } catch (IOException | RuntimeException e) {
+            throw new IllegalStateException("Could not read inventory CSV near line " + line + ".", e);
+        }
+    }
+
+    @Override public boolean saveItems(List<Item> items) {
+        return write(items, false);
+    }
+
+    public boolean exportItems(List<Item> items) {
+        return write(items, true);
+    }
+
+    private boolean write(List<Item> items, boolean spreadsheetSafe) {
+        Path temporary = null;
+        try {
+            Path target = path.toAbsolutePath();
+            Files.createDirectories(target.getParent());
+            temporary = Files.createTempFile(target.getParent(), "ledger-", ".tmp");
+            try (var writer = Files.newBufferedWriter(temporary)) {
+                writer.write(HEADER);
+                writer.newLine();
+                for (Item item : items) {
+                    writer.write(String.join(",", Integer.toString(item.getId()),
+                            field(item.getName(), spreadsheetSafe), field(item.getCategory(), spreadsheetSafe),
+                            Integer.toString(item.getQuantity()), item.getExpiryDate().toString(),
+                            field(item.getNotes(), spreadsheetSafe), value(item.getManufactured()),
+                            value(item.getPrice()), field(item.getBatch(), spreadsheetSafe)));
+                    writer.newLine();
+                }
+            }
+            try {
+                Files.move(temporary, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+            } catch (AtomicMoveNotSupportedException e) {
+                Files.move(temporary, target, StandardCopyOption.REPLACE_EXISTING);
+            }
+            return true;
+        } catch (IOException e) {
+            LOGGER.log(Level.SEVERE, "Failed to write " + path, e);
+            return false;
+        } finally {
+            if (temporary != null) {
+                try {
+                    Files.deleteIfExists(temporary);
+                } catch (IOException e) {
+                    LOGGER.log(Level.WARNING, "Could not clean up temporary CSV", e);
+                }
             }
         }
-        fields.add(sb.toString());
-        return fields;
     }
 
-    /**
-     * Wraps a field in quotes if it contains commas, double quotes, or newlines.
-     */
-    private String escapeCsvField(String value) {
-        if (value == null) {
-            return "";
+    public List<Item> createSampleItems() { return SampleData.createSampleItems(); }
+
+    private static Item parse(String record) {
+        List<String> fields = new ArrayList<>();
+        StringBuilder value = new StringBuilder();
+        boolean quoted = false;
+        for (int i = 0; i < record.length(); i++) {
+            char c = record.charAt(i);
+            if (c == '"' && quoted && i + 1 < record.length() && record.charAt(i + 1) == '"') {
+                value.append('"');
+                i++;
+            } else if (c == '"') {
+                quoted = !quoted;
+            } else if (c == ',' && !quoted) {
+                fields.add(value.toString());
+                value.setLength(0);
+            } else {
+                value.append(c);
+            }
         }
-        if (value.contains(",") || value.contains("\"") || value.contains("\n")) {
-            return "\"" + value.replace("\"", "\"\"") + "\"";
+        fields.add(value.toString());
+        if (fields.size() < 5) throw new IllegalArgumentException("Missing required fields");
+        String manufactured = optional(fields, 6);
+        String price = optional(fields, 7);
+        return new Item(Integer.parseInt(fields.get(0).strip()), fields.get(1), fields.get(2),
+                Integer.parseInt(fields.get(3).strip()), LocalDate.parse(fields.get(4).strip()),
+                optional(fields, 5), manufactured.isBlank() ? null : LocalDate.parse(manufactured),
+                price.isBlank() ? null : new BigDecimal(price), optional(fields, 8));
+    }
+
+    private static String optional(List<String> fields, int index) {
+        return index < fields.size() ? fields.get(index).strip() : "";
+    }
+
+    private static String value(Object value) { return value == null ? "" : value.toString(); }
+
+    private static String field(String value, boolean spreadsheetSafe) {
+        String trimmed = value.stripLeading();
+        if (spreadsheetSafe && !trimmed.isEmpty() && "=+-@".indexOf(trimmed.charAt(0)) >= 0) {
+            value = "'" + value;
         }
-        return value;
+        return "\"" + value.replace("\"", "\"\"") + "\"";
     }
 }

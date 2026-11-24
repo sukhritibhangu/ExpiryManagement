@@ -1,8 +1,14 @@
 services:
   - type: web
-    name: expiry-management
+    name: expiry-alert-ledger-demo
     runtime: docker
     plan: free
+    autoDeployTrigger: "off"
+    healthCheckPath: /status/alive
     envVars:
-      - key: PORT
-        value: 8080
+      - key: LEDGER_BROWSER_DATA
+        value: /tmp/ledger-demo
+      - key: JAVA_TOOL_OPTIONS
+        value: "-Xmx256m -XX:+UseSerialGC"
+      - key: TZ
+        value: Asia/Kolkata

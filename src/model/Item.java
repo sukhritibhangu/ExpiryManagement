@@ -1,22 +1,52 @@
 package model;
 
 import java.time.LocalDate;
+import java.math.BigDecimal;
 import java.util.Objects;
 
 /**
  * Represents an item in the household or small business inventory.
- * 
- * Demonstrates Object-Oriented Programming (OOP) principles:
- * - Encapsulation: Fields are private and accessed via public getters and setters.
- * - Validation: Ensures required fields like name and quantity are valid.
+ *
+ * <p>Demonstrates Object-Oriented Programming (OOP) principles:</p>
+ * <ul>
+ *   <li>Inheritance: common fields and validation live in {@link InventoryEntry}.</li>
+ *   <li>Interface: implements {@link Expirable} for expiry-date behaviour.</li>
+ *   <li>Encapsulation: fields are private and accessed via public getters and setters.</li>
+ *   <li>Validation: ensures required fields like name and quantity are valid.</li>
+ * </ul>
  */
-public class Item {
-    private int id;
-    private String name;
-    private String category;
+public class Item extends InventoryEntry implements Expirable {
+
+    private static final long serialVersionUID = 1L;
+
     private int quantity;
     private LocalDate expiryDate;
-    private String notes;
+    private LocalDate manufactured;
+    private BigDecimal price;
+    private String batch;
+
+    public Item(int id, String name, String category, int quantity, LocalDate expiryDate, String notes,
+                LocalDate manufactured, BigDecimal price, String batch) {
+        this(id, name, category, quantity, expiryDate, notes);
+        if (manufactured != null && manufactured.isAfter(expiryDate)) {
+            throw new IllegalArgumentException("Manufacturing date must be on or before expiry.");
+        }
+        if (price != null && (price.signum() < 0 || price.scale() > 2
+                || price.compareTo(new BigDecimal("999999999999.99")) > 0)) {
+            throw new IllegalArgumentException("Enter a non-negative unit price with up to two decimal places.");
+        }
+        this.manufactured = manufactured;
+        this.price = price;
+        this.batch = batch == null ? "" : batch.strip();
+    }
+
+    public LocalDate getManufactured() { return manufactured; }
+    public BigDecimal getPrice() { return price; }
+    public String getBatch() { return batch == null ? "" : batch; }
+
+    public BigDecimal inventoryValue() {
+        return price == null ? BigDecimal.ZERO : price.multiply(BigDecimal.valueOf(quantity));
+    }
 
     /**
      * Constructs a new Item with all required and optional attributes.
@@ -29,39 +59,19 @@ public class Item {
      * @param notes       Optional notes (e.g., "Keep refrigerated", "Batch #12")
      */
     public Item(int id, String name, String category, int quantity, LocalDate expiryDate, String notes) {
-        this.id = id;
-        this.name = Objects.requireNonNull(name, "Item name cannot be null").trim();
-        this.category = Objects.requireNonNull(category, "Category cannot be null").trim();
-        this.quantity = quantity;
+        super(id, name, category, notes);
+        setQuantity(quantity);
         this.expiryDate = Objects.requireNonNull(expiryDate, "Expiry date cannot be null");
-        this.notes = notes == null ? "" : notes.trim();
     }
 
-    // --- Getters and Setters ---
-
-    public int getId() {
-        return id;
+    /**
+     * Overloaded constructor for items without notes.
+     */
+    public Item(int id, String name, String category, int quantity, LocalDate expiryDate) {
+        this(id, name, category, quantity, expiryDate, "");
     }
 
-    public void setId(int id) {
-        this.id = id;
-    }
-
-    public String getName() {
-        return name;
-    }
-
-    public void setName(String name) {
-        this.name = Objects.requireNonNull(name, "Item name cannot be null").trim();
-    }
-
-    public String getCategory() {
-        return category;
-    }
-
-    public void setCategory(String category) {
-        this.category = Objects.requireNonNull(category, "Category cannot be null").trim();
-    }
+    // --- Item-specific accessors ---
 
     public int getQuantity() {
         return quantity;
@@ -74,6 +84,7 @@ public class Item {
         this.quantity = quantity;
     }
 
+    @Override
     public LocalDate getExpiryDate() {
         return expiryDate;
     }
@@ -82,36 +93,28 @@ public class Item {
         this.expiryDate = Objects.requireNonNull(expiryDate, "Expiry date cannot be null");
     }
 
-    public String getNotes() {
-        return notes;
-    }
+    // --- InventoryEntry contract ---
 
-    public void setNotes(String notes) {
-        this.notes = notes == null ? "" : notes.trim();
+    @Override
+    public String getEntryType() {
+        return "Item";
     }
 
     @Override
-    public boolean equals(Object o) {
-        if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
-        Item item = (Item) o;
-        return id == item.id;
-    }
-
-    @Override
-    public int hashCode() {
-        return Objects.hash(id);
+    public String getSummary() {
+        return getName() + " (" + getCategory() + ")";
     }
 
     @Override
     public String toString() {
         return "Item{" +
-                "id=" + id +
-                ", name='" + name + '\'' +
-                ", category='" + category + '\'' +
+                "id=" + getId() +
+                ", name='" + getName() + '\'' +
+                ", category='" + getCategory() + '\'' +
                 ", quantity=" + quantity +
                 ", expiryDate=" + expiryDate +
-                ", notes='" + notes + '\'' +
+                ", notes='" + getNotes() + '\'' +
                 '}';
     }
 }
+

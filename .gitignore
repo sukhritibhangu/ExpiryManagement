@@ -11,3 +11,25 @@ bin/
 *.iml
 .DS_Store
 Thumbs.db
+
+# Serializable inventory backup (generated at runtime)
+data/inventory.snapshot
+
+# Maven build output and downloaded jars
+target/
+lib/
+
+# H2 database files
+data/*.mv.db
+data/*.trace.db
+
+data/inventory.csv
+data/profile*
+.env
+.env.*
+push.bat
+commit_and_push.bat
+
+browser-data/
+.jpro/
+RUNNING_PID
